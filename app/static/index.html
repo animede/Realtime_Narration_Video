@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Realtime Narration Video</title>
+  <link rel="stylesheet" href="/static/style.css?v=2">
+</head>
+<body>
+  <main>
+    <header>
+      <p class="eyebrow">LTX-2.5 / AivisSpeech</p>
+      <h1>Realtime Narration Video</h1>
+      <p>文章を約5秒ずつ音声化し、生成できた映像から順番に再生します。</p>
+    </header>
+    <section class="panel input-panel">
+      <form id="form">
+        <label>キャラクター画像
+          <span class="drop-zone image-drop" id="character-drop">
+            <input name="character" id="character-input" type="file" accept="image/png,image/jpeg,image/webp" required>
+            <img id="character-preview" alt="キャラクタープレビュー" hidden>
+            <span class="drop-copy"><b>画像をドロップ</b><small>PNG・JPEG・WebP／クリックして選択</small></span>
+          </span>
+        </label>
+        <label>映像の方向性<input name="concept" placeholder="落ち着いたスタジオで説明する"></label>
+        <label>キャラクター種別
+          <select name="character_mode">
+            <option value="standard">標準（イラスト・3D）</option>
+            <option value="photoreal" selected>実写・口動作優先</option>
+          </select>
+        </label>
+        <label>動画プロファイル
+          <select name="video_profile" id="video-profile">
+            <optgroup label="16fps・解像度優先">
+              <option value="16fps-resolution">640×352（16:9）</option>
+              <option value="16fps-5x3">640×384（5:3 人物向け）</option>
+              <option value="16fps-3x2">576×384（3:2 安定）</option>
+              <option value="16fps-4x3-resolution">512×384（4:3）</option>
+              <option value="16fps-portrait-3x4">384×512（3:4 縦型）</option>
+              <option value="16fps-portrait">384×640（3:5 縦型・実験）</option>
+            </optgroup>
+            <optgroup label="20fps・バランス">
+              <option value="20fps-hq" selected>576×320（16:9）</option>
+              <option value="20fps-4x3-balanced">512×384（4:3）</option>
+            </optgroup>
+            <optgroup label="24fps・動き優先">
+              <option value="24fps-fast">512×288（16:9）</option>
+              <option value="24fps-3x2">480×320（3:2）</option>
+              <option value="24fps-portrait">288×512（9:16 縦型）</option>
+            </optgroup>
+          </select>
+        </label>
+        <div class="options">
+          <label>話者ID<input name="voice_id" type="number" value="888753760"></label>
+          <label>チャンク秒数<input name="target_chunk_seconds" type="number" min="3.5" max="5" step="0.1" value="5"></label>
+          <label>先読み数<input name="startup_buffer_chunks" type="number" min="1" max="5" value="1"></label>
+        </div>
+        <button type="submit">キャラクターを設定</button>
+      </form>
+      <span class="drop-zone text-drop side-text-drop" id="text-drop">
+        <input id="text-file" type="file" accept=".txt,text/plain">
+        <span class="text-file-icon">TXT</span>
+        <span class="drop-copy"><b>TXTをドロップ</b><small>UTF-8・Shift_JIS</small></span>
+      </span>
+    </section>
+    <section class="panel player-panel">
+      <div class="status-row"><span id="status">待機中</span><span id="buffer"></span></div>
+      <div id="video-stack" class="video-stack">
+        <img id="stage-character" class="stage-character" alt="設定したキャラクター" hidden>
+        <video id="player-a" class="active" controls playsinline preload="auto"></video>
+        <video id="player-b" playsinline preload="auto"></video>
+      </div>
+      <p id="caption">生成を開始すると、ここに読み上げ内容が表示されます。</p>
+      <div id="assistant-live" class="assistant-live"></div>
+      <form id="chat-form" class="chat-form">
+        <div class="chat-entry">
+          <textarea id="narration-text" rows="2" disabled placeholder="キャラクター設定後、メッセージを入力。Enterで送信、Shift+Enterで改行。"></textarea>
+          <button type="submit" disabled>送信</button>
+        </div>
+        <small id="text-file-name" class="file-name"></small>
+      </form>
+      <ol id="chunks"></ol>
+    </section>
+  </main>
+  <script src="/static/app.js?v=7"></script>
+</body>
+</html>

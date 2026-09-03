@@ -1,0 +1,46 @@
+:root { color-scheme: dark; font-family: Inter, "Noto Sans JP", system-ui, sans-serif; background: #080b12; color: #edf3ff; }
+* { box-sizing: border-box; }
+body { margin: 0; min-height: 100vh; background: radial-gradient(circle at 80% 0, #193866 0, transparent 35%), #080b12; }
+main { width: min(1180px, calc(100% - 32px)); margin: 40px auto; display: grid; grid-template-columns: 420px 1fr; gap: 22px; }
+header { grid-column: 1 / -1; }
+h1 { margin: 4px 0; font-size: clamp(2rem, 5vw, 4.5rem); letter-spacing: -.055em; }
+.eyebrow { color: #68e4ff; text-transform: uppercase; letter-spacing: .18em; font-size: .78rem; }
+.panel { background: rgba(15, 22, 36, .88); border: 1px solid #27344c; border-radius: 18px; padding: 22px; box-shadow: 0 18px 60px #0007; }
+form, label { display: grid; gap: 8px; }
+form { gap: 18px; }
+input, textarea, select { width: 100%; border: 1px solid #35455f; border-radius: 9px; background: #0b111e; color: inherit; padding: 11px; font: inherit; }
+textarea { resize: vertical; }
+.options { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.drop-zone { position: relative; display: grid; place-items: center; min-height: 112px; overflow: hidden; border: 1px dashed #516785; border-radius: 12px; background: #0a1220; cursor: pointer; transition: border-color .16s, background .16s, transform .16s; }
+.drop-zone:hover, .drop-zone.drag-over { border-color: #68e4ff; background: #10233a; transform: translateY(-1px); }
+.drop-zone input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+.drop-copy { display: grid; gap: 5px; position: relative; z-index: 2; padding: 18px; text-align: center; pointer-events: none; }
+.drop-copy small, .file-name { color: #8290a8; }
+.image-drop { min-height: 190px; }
+.image-drop img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #050811; }
+.image-drop.has-file .drop-copy { align-self: end; width: 100%; padding: 28px 12px 10px; background: linear-gradient(transparent, #050811e8); }
+.image-drop.has-file .drop-copy small { display: none; }
+.text-drop { grid-template-columns: auto 1fr; min-height: 86px; padding: 10px 20px; }
+.side-text-drop { margin-top: 18px; }
+.chat-form { margin-top: 16px; padding-top: 16px; border-top: 1px solid #27344c; }
+.chat-entry { display: grid; grid-template-columns: 1fr 90px; gap: 10px; align-items: stretch; }
+.chat-entry textarea { min-height: 64px; resize: vertical; }
+.assistant-live { min-height: 1.5em; max-height: 150px; overflow: auto; color: #c6d8f5; line-height: 1.7; white-space: pre-wrap; }
+.text-file-icon { padding: 8px; border: 1px solid #68e4ff; border-radius: 7px; color: #68e4ff; font-size: .75rem; font-weight: 800; letter-spacing: .08em; }
+.text-drop .drop-copy { text-align: left; }
+.text-drop.has-file { border-color: #70e6ad; }
+button { border: 0; border-radius: 10px; padding: 13px; background: #65dffc; color: #041019; font-weight: 800; cursor: pointer; }
+button:disabled { opacity: .45; }
+.status-row { display: flex; justify-content: space-between; color: #9fc7ff; margin-bottom: 12px; }
+.video-stack { position: relative; width: 100%; background: #02040a; border-radius: 12px; overflow: hidden; }
+.stage-character { position: absolute; inset: 0; z-index: 2; width: 100%; height: 100%; object-fit: cover; object-position: center; background: #02040a; opacity: 0; transition: opacity .22s ease; pointer-events: none; }
+.stage-character.visible { opacity: 1; }
+.video-stack video { position: absolute; inset: 0; display: block; width: 100%; height: 100%; object-fit: contain; background: #02040a; opacity: 0; pointer-events: none; }
+.video-stack video.active { opacity: 1; pointer-events: auto; z-index: 1; }
+.player-panel.portrait .video-stack { width: auto; max-width: 100%; height: min(68vh, 720px); margin-inline: auto; }
+#caption { min-height: 3em; font-size: 1.08rem; line-height: 1.7; }
+#chunks { max-height: 250px; overflow: auto; padding-left: 26px; color: #8290a8; }
+#chunks li { padding: 5px 0; }
+#chunks .playable { color: #70e6ad; }
+#chunks .failed { color: #ff7f91; }
+@media (max-width: 820px) { main { grid-template-columns: 1fr; } .options { grid-template-columns: 1fr; } }
