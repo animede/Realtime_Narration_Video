@@ -47,6 +47,13 @@ class Orchestrator:
         self.sessions[session.id] = session
         self.tasks[session.id] = asyncio.create_task(self._run_chat(session, character))
 
+    def narrate(self, session: NarrationSession, character: Path, text: str) -> None:
+        """Speak supplied text directly without sending it to the LLM."""
+        self.sessions[session.id] = session
+        self.tasks[session.id] = asyncio.create_task(
+            self._run_chat(session, character, narration_text=text)
+        )
+
     def is_running(self, session_id: str) -> bool:
         task = self.tasks.get(session_id)
         return task is not None and not task.done()
@@ -93,7 +100,7 @@ class Orchestrator:
                     "Medium close-up of the same character repeatedly articulating sustained open vowel "
                     "sounds. The mouth opens wide and visibly for every vowel; lips, teeth, and jaw are "
                     "clearly visible. Stable identity and camera.",
-                    1004, preparation_profile, 8, preparation_frames, 1.3,
+                    session.video_seed, preparation_profile, 8, preparation_frames, 1.3,
                 )
                 raw = folder / "character-preparation.mp4"
                 await gateway.download(result["result"]["video_url"], raw)
@@ -111,11 +118,12 @@ class Orchestrator:
             self.save(session)
             raise
 
-    async def _run_chat(self, session: NarrationSession, character: Path) -> None:
+    async def _run_chat(self, session: NarrationSession, character: Path,
+                        narration_text: str | None = None) -> None:
         folder = self.settings.data_dir / session.id
         gateway = GatewayClient(self.settings.gateway_url, self.settings.gateway_preset,
                                 self.settings.poll_interval)
-        llm = StreamingChatClient(
+        llm = None if narration_text is not None else StreamingChatClient(
             self.settings.llm_url, self.settings.llm_model, self.settings.llm_api_key
         )
         tts_queue: asyncio.Queue[tuple[asyncio.Task, str, float] | None] = asyncio.Queue()
@@ -136,7 +144,9 @@ class Orchestrator:
                 if not parts:
                     return
                 index = len(session.chunks)
-                chunk_duration = clip_duration
+                # Long speech is allowed to outlast the fixed LTX video. The
+                # browser holds the final video frame until the original audio ends.
+                chunk_duration = max(clip_duration, parts_duration)
                 audio = folder / f"chunk-{index:03}.wav"
                 original_wav = join_wavs([part.wav for part in parts])
                 audio.write_bytes(original_wav)
@@ -151,7 +161,7 @@ class Orchestrator:
                     tts_started_at=started_at, audio_ready_at=time(),
                 )
                 session.chunks.append(chunk)
-                elapsed += clip_duration
+                elapsed += chunk_duration
                 parts, parts_duration, started_at = [], 0.0, None
                 first_of_turn = False
                 self.save(session)
@@ -164,7 +174,10 @@ class Orchestrator:
                 task, text, part_started_at = queued
                 wav, part_duration = await task
                 part = SpeechPart(text, wav, part_duration)
-                if parts and parts_duration >= session.target_chunk_seconds * 0.65 and parts_duration + part_duration > 5.0:
+                # Do not merge another sentence when it would push the spoken
+                # chunk past the configured target. The previous 65% threshold
+                # favored fewer clips but frequently produced six-second chunks.
+                if parts and parts_duration + part_duration > session.target_chunk_seconds:
                     await emit()
                 if not parts:
                     started_at = part_started_at
@@ -204,9 +217,9 @@ class Orchestrator:
                 audio_id = await gateway.upload(condition_audio)
                 actual_profile = generation_profile(session.video_profile, first_video_of_turn)
                 actual_steps = 4 if first_video_of_turn else 8
-                # Photoreal tests showed the most consistent articulation with 1004.
-                # Audio, spoken text, and chained reference frames still vary per clip.
-                actual_seed = 1004 if session.character_mode == "photoreal" else 1000 + chunk.index
+                # Keep photoreal motion reproducible with the selected seed. Standard
+                # mode offsets each chunk so chained clips do not repeat the same motion.
+                actual_seed = session.video_seed if session.character_mode == "photoreal" else session.video_seed + chunk.index
                 actual_modality_scale = (
                     1.3
                     if session.character_mode == "photoreal" and session.lip_sync_mode == "strong"
@@ -229,10 +242,9 @@ class Orchestrator:
                 raw = folder / f"chunk-{chunk.index:03}-raw.mp4"
                 await gateway.download(result["result"]["video_url"], raw)
                 output = folder / f"chunk-{chunk.index:03}.mp4"
-                # Keep the full LTX clip. The conditioning copy contains the exact
-                # TTS waveform followed only by silence, giving the next generation
-                # time to finish without changing the spoken audio.
-                await mux_original_audio(raw, condition_audio, output, float(chunk.duration))
+                # Keep the full original TTS waveform. If it outlasts the fixed LTX
+                # video, the media element retains the last frame until speech ends.
+                await mux_original_audio(raw, audio_path, output)
                 raw.unlink(missing_ok=True)
                 if session.character_mode == "standard":
                     chain_path = folder / f"chain-{chunk.index:03}.png"
@@ -246,14 +258,32 @@ class Orchestrator:
                 self.save(session)
 
         try:
-            session.status = SessionStatus.CHATTING
+            session.status = (
+                SessionStatus.SYNTHESIZING if narration_text is not None else SessionStatus.CHATTING
+            )
             session.error = None
-            session.llm_started_at = time()
+            session.llm_started_at = None if narration_text is not None else time()
             session.llm_first_delta_at = None
             session.llm_completed_at = None
             self.save(session)
 
             async def receiver_with_labels() -> None:
+                if narration_text is not None:
+                    fragments, _ = pop_speakable(
+                        narration_text, force=True, language=session.conversation_language
+                    )
+                    for fragment in fragments:
+                        task = asyncio.create_task(synthesize_sentence(
+                            self.settings.tts_url, session.voice_id, fragment
+                        ))
+                        await tts_queue.put((task, fragment, time()))
+                        # Bound direct-reading concurrency for very long pasted
+                        # documents while video generation continues in parallel.
+                        await task
+                    await tts_queue.put(None)
+                    return
+
+                assert llm is not None
                 history = [{"role": "system", "content": system_prompt(session.conversation_language)}]
                 history.extend(item.model_dump() for item in session.messages[-20:])
                 buffer = ""

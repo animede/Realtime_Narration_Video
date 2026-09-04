@@ -23,15 +23,22 @@ textarea { resize: vertical; }
 .image-drop img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #050811; }
 .image-drop.has-file .drop-copy { align-self: end; width: 100%; padding: 28px 12px 10px; background: linear-gradient(transparent, #050811e8); }
 .image-drop.has-file .drop-copy small { display: none; }
-.text-drop { grid-template-columns: auto 1fr; min-height: 86px; padding: 10px 20px; }
 .side-text-drop { margin-top: 18px; }
+.narration-entry { display: grid; gap: 9px; padding: 14px; border: 1px dashed #516785; border-radius: 12px; background: #0a1220; transition: border-color .16s, background .16s; }
+.narration-entry.drag-over { border-color: #68e4ff; background: #10233a; }
+.narration-entry textarea { min-height: 150px; }
+.narration-tools { display: flex; align-items: center; gap: 10px; }
+.narration-tools .file-name { flex: 1; }
+.file-picker { display: inline-block; padding: 9px 11px; border: 1px solid #516785; border-radius: 8px; cursor: pointer; }
+.file-picker:hover { border-color: #68e4ff; }
+.file-picker input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.narration-tools button { padding: 10px 18px; }
 .chat-form { margin-top: 16px; padding-top: 16px; border-top: 1px solid #27344c; }
 .chat-entry { display: grid; grid-template-columns: 1fr 90px; gap: 10px; align-items: stretch; }
 .chat-entry textarea { min-height: 64px; resize: vertical; }
 .assistant-live { min-height: 1.5em; max-height: 150px; overflow: auto; color: #c6d8f5; line-height: 1.7; white-space: pre-wrap; }
 .text-file-icon { padding: 8px; border: 1px solid #68e4ff; border-radius: 7px; color: #68e4ff; font-size: .75rem; font-weight: 800; letter-spacing: .08em; }
-.text-drop .drop-copy { text-align: left; }
-.text-drop.has-file { border-color: #70e6ad; }
+.narration-entry.has-file { border-color: #70e6ad; }
 button { border: 0; border-radius: 10px; padding: 13px; background: #65dffc; color: #041019; font-weight: 800; cursor: pointer; }
 button:disabled { opacity: .45; }
 .status-row { display: flex; justify-content: space-between; color: #9fc7ff; margin-bottom: 12px; }

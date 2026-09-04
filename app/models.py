@@ -56,6 +56,7 @@ class NarrationSession(BaseModel):
     video_profile: str = "20fps-hq"
     character_mode: str = "standard"
     lip_sync_mode: str = "fast"
+    video_seed: int = 1004
     ui_language: str = "ja"
     conversation_language: str = "auto"
     target_chunk_seconds: float = 5.0

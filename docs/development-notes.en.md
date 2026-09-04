@@ -167,7 +167,7 @@ The exact utterance was moved to the beginning of the prompt as quoted dialogue,
 
 ### 7.3 Seed experiments
 
-Seeds including 1001 and 1004 were compared. Seed 1004 produced clear articulation repeatedly, but also failed in a later run, proving that seed alone cannot guarantee success. Photorealistic modes use the most reliable observed seed, 1004; Standard varies the seed per chunk.
+Seeds including 1001 and 1004 were compared. Seed 1004 produced clear articulation repeatedly, but also failed in a later run, proving that seed alone cannot guarantee success. Photorealistic modes default to the most reliable observed seed, 1004, and apply the UI-selected seed to every chunk; Standard varies each chunk from the selected base seed.
 
 ### 7.4 Final-frame chaining
 
@@ -189,8 +189,8 @@ Later server tests showed bit-identical output because A2V freezes audio and `au
 | Mode | Scale | Seed | Reference | Purpose |
 |---|---:|---:|---|---|
 | Standard (illustration/3D) | None | Variable | Chained final frame | Speed and continuity |
-| Photorealistic/Fast | `modality_scale=1.3` during preparation only | 1004 | Speaking anchor every time | Initial speed and continuity |
-| Photorealistic/Strong Lip Motion | 1.3 during conversation too | 1004 | Speaking anchor every time | Higher articulation reliability |
+| Photorealistic/Fast | `modality_scale=1.3` during preparation only | UI-selected (default 1004) | Speaking anchor every time | Initial speed and continuity |
+| Photorealistic/Strong Lip Motion | 1.3 during conversation too | UI-selected (default 1004) | Speaking anchor every time | Higher articulation reliability |
 
 ### 7.6 Registration-time speaking anchor
 
@@ -254,7 +254,7 @@ A removed three-/five-second comparison calculated `seconds × fps + 1`, produci
 - Reduced first-clip resolution for every profile; selected resolution thereafter
 - 100 ms Gateway polling
 - User-selected character policy
-- Photorealistic/Fast default: 288×384 first, 384×512 follow-ups for that selected profile, seed 1004, no conversation scale, speaking anchor every time
+- Photorealistic/Fast default: 288×384 first, 384×512 follow-ups for that selected profile, UI-selected seed (default 1004), no conversation scale, speaking anchor every time
 - Photorealistic/Strong: same plus conversation `modality_scale=1.3`
 - Standard: selected profile, variable seed, scale 1.0/default, final-frame chaining within a turn
 - Replace generated audio with original TTS audio

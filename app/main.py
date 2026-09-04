@@ -57,6 +57,7 @@ async def create_session(
     video_profile: str = Form("20fps-hq"),
     character_mode: str = Form("standard"),
     lip_sync_mode: str = Form("fast"),
+    video_seed: int = Form(1004),
     ui_language: str = Form("ja"),
     conversation_language: str = Form("auto"),
     target_chunk_seconds: float = Form(settings.target_chunk_seconds),
@@ -76,13 +77,15 @@ async def create_session(
         raise HTTPException(400, "キャラクター種別が不正です")
     if lip_sync_mode not in {"fast", "strong"}:
         raise HTTPException(400, "リップシンク設定が不正です")
+    if not 0 <= video_seed <= 2_147_483_647:
+        raise HTTPException(400, "seedは0～2147483647で指定してください")
     if ui_language not in {"ja", "en"}:
         raise HTTPException(400, "UI言語が不正です")
     if conversation_language not in {"auto", "ja", "en"}:
         raise HTTPException(400, "会話言語が不正です")
     session = NarrationSession(
         text=cleaned, concept=concept.strip(), voice_id=voice_id, video_profile=video_profile,
-        character_mode=character_mode, lip_sync_mode=lip_sync_mode,
+        character_mode=character_mode, lip_sync_mode=lip_sync_mode, video_seed=video_seed,
         ui_language=ui_language, conversation_language=conversation_language,
         target_chunk_seconds=target_chunk_seconds,
         startup_buffer_chunks=startup_buffer_chunks,
@@ -131,6 +134,29 @@ async def send_message(session_id: str, request: ChatRequest):
     session.messages.append(ChatMessage(role="user", content=text))
     orchestrator.save(session)
     orchestrator.chat(session, character)
+    return session
+
+
+@app.post("/api/sessions/{session_id}/narrations", response_model=NarrationSession, status_code=202)
+async def narrate_text(session_id: str, request: ChatRequest):
+    session = get_session_or_404(session_id)
+    if orchestrator.is_running(session_id):
+        raise HTTPException(409, "前の応答を生成中です")
+    text = request.text.strip()
+    if not text:
+        raise HTTPException(400, "朗読する文章を入力してください")
+    if len(text) > 20_000:
+        raise HTTPException(400, "朗読文章は20,000文字以内にしてください")
+    folder = settings.data_dir / session.id
+    character = next(iter(folder.glob("character.*")), None)
+    if character is None:
+        raise HTTPException(404, "キャラクター画像が見つかりません")
+    session.text = text
+    session.cancelled = False
+    session.error = None
+    session.assistant_text = ""
+    orchestrator.save(session)
+    orchestrator.narrate(session, character, text)
     return session
 
 

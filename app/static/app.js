@@ -14,6 +14,8 @@ const characterPreview = document.querySelector("#character-preview");
 const stageCharacter = document.querySelector("#stage-character");
 const textDrop = document.querySelector("#text-drop");
 const textFileInput = document.querySelector("#text-file");
+const narrationSource = document.querySelector("#narration-source");
+const narrationButton = document.querySelector("#narrate-button");
 const narrationText = document.querySelector("#narration-text");
 const textFileName = document.querySelector("#text-file-name");
 const uiLanguageSelect = document.querySelector("#ui-language");
@@ -32,11 +34,12 @@ const messages = {
     profilePortrait34: "384×512（3:4 縦型）", profilePortrait35: "384×640（3:5 縦型・実験）",
     profilePortrait916: "288×512（9:16 縦型）",
     conversationLanguage: "会話言語", languageAuto: "自動（入力に合わせる）", languageJapanese: "日本語",
-    languageEnglish: "英語", speakerId: "話者ID", chunkSeconds: "チャンク秒数", preloadCount: "先読み数",
+    languageEnglish: "英語", speakerId: "話者ID", videoSeed: "動画seed", chunkSeconds: "チャンク秒数", preloadCount: "先読み数",
     setCharacter: "キャラクターを設定", updateSettings: "設定を更新", configured: "設定済み",
-    dropText: "TXTをドロップ", idle: "待機中", configuredCharacter: "設定したキャラクター",
+    narrationLabel: "朗読させたい文章", narrationPlaceholder: "文章を入力・貼り付け、またはTXTファイルをドロップ",
+    selectTextFile: "TXTを選択", narrate: "朗読", idle: "待機中", configuredCharacter: "設定したキャラクター",
     captionPlaceholder: "生成を開始すると、ここに読み上げ内容が表示されます。",
-    messagePlaceholder: "キャラクター設定後、メッセージを入力。Enterで送信、Shift+Enterで改行。", send: "送信",
+    messagePlaceholder: "テキストを入力・貼り付け。Enterで送信、Shift+Enterで改行。", send: "送信",
     queued: "チャット入力待ち", preparing: "キャラクターを準備中", chatting: "Gemma 4が応答中",
     synthesizing: "音声を合成中", generating: "映像を生成中", playable: "再生可能", completed: "生成完了",
     failed: "エラー", cancelled: "キャンセル済み", preparingModel: "モデルと発話用画像を準備中",
@@ -60,11 +63,12 @@ const messages = {
     profilePortrait34: "384×512 (3:4 portrait)", profilePortrait35: "384×640 (3:5 portrait / experimental)",
     profilePortrait916: "288×512 (9:16 portrait)",
     conversationLanguage: "Conversation language", languageAuto: "Auto (match input)", languageJapanese: "Japanese",
-    languageEnglish: "English", speakerId: "Speaker ID", chunkSeconds: "Chunk seconds", preloadCount: "Startup buffer",
+    languageEnglish: "English", speakerId: "Speaker ID", videoSeed: "Video seed", chunkSeconds: "Chunk seconds", preloadCount: "Startup buffer",
     setCharacter: "Set character", updateSettings: "Update settings", configured: "Configured",
-    dropText: "Drop a TXT file", idle: "Idle", configuredCharacter: "Configured character",
+    narrationLabel: "Text to narrate", narrationPlaceholder: "Type or paste text, or drop a TXT file",
+    selectTextFile: "Choose TXT", narrate: "Narrate", idle: "Idle", configuredCharacter: "Configured character",
     captionPlaceholder: "Spoken text will appear here after generation starts.",
-    messagePlaceholder: "Enter a message after setting the character. Enter sends; Shift+Enter adds a line.", send: "Send",
+    messagePlaceholder: "Type or paste text. Enter sends; Shift+Enter adds a line.", send: "Send",
     queued: "Ready for chat", preparing: "Preparing character", chatting: "Gemma 4 is responding",
     synthesizing: "Synthesizing speech", generating: "Generating video", playable: "Playable", completed: "Generation complete",
     failed: "Error", cancelled: "Cancelled", preparingModel: "Preparing the model and speaking anchor",
@@ -195,10 +199,10 @@ async function decodeTextFile(file) {
   const bytes = new Uint8Array(await file.arrayBuffer());
   let text = new TextDecoder("utf-8", {fatal: false}).decode(bytes);
   if (text.includes("\uFFFD")) text = new TextDecoder("shift_jis").decode(bytes);
-  narrationText.value = text.replace(/^\uFEFF/, "").replace(/\r\n?/g, "\n").trim();
-  textFileName.textContent = `${t("loadedFile", file.name)} (${narrationText.value.length.toLocaleString()} chars)`;
+  narrationSource.value = text.replace(/^\uFEFF/, "").replace(/\r\n?/g, "\n").trim();
+  textFileName.textContent = `${t("loadedFile", file.name)} (${narrationSource.value.length.toLocaleString()} chars)`;
   textDrop.classList.add("has-file");
-  narrationText.dispatchEvent(new Event("input", {bubbles: true}));
+  narrationSource.dispatchEvent(new Event("input", {bubbles: true}));
 }
 
 textFileInput.addEventListener("change", () => {
@@ -240,6 +244,7 @@ form.addEventListener("submit", async (event) => {
     connectEvents();
     narrationText.disabled = false;
     chatForm.querySelector("button").disabled = false;
+    narrationButton.disabled = false;
     statusLabel.textContent = t("queued");
     button.textContent = t("configured");
     narrationText.focus();
@@ -249,12 +254,38 @@ form.addEventListener("submit", async (event) => {
   }
 });
 
+narrationButton.addEventListener("click", async () => {
+  const text = narrationSource.value.trim();
+  if (!sessionId || !text) return;
+  narrationButton.disabled = true;
+  chatForm.querySelector("button").disabled = true;
+  try {
+    const response = await fetch(`/api/sessions/${sessionId}/narrations`, {
+      method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({text})
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || `HTTP ${response.status}`);
+    nextIndex = data.chunks.length;
+    playingIndex = null;
+    playbackStarted = false;
+    assistantLive.textContent = "";
+    stageCharacter.hidden = false;
+    stageCharacter.classList.add("visible");
+    connectEvents();
+  } catch (error) {
+    statusLabel.textContent = t("sendError", error.message);
+    narrationButton.disabled = false;
+    chatForm.querySelector("button").disabled = false;
+  }
+});
+
 chatForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   const text = narrationText.value.trim();
   if (!sessionId || !text) return;
   const button = chatForm.querySelector("button");
   button.disabled = true;
+  narrationButton.disabled = true;
   try {
     const response = await fetch(`/api/sessions/${sessionId}/messages`, {
       method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({text})
@@ -262,7 +293,6 @@ chatForm.addEventListener("submit", async (event) => {
     const data = await response.json();
     if (!response.ok) throw new Error(data.detail || `HTTP ${response.status}`);
     narrationText.value = "";
-    textFileName.textContent = "";
     assistantLive.textContent = "";
     nextIndex = data.chunks.length;
     playingIndex = null;
@@ -273,6 +303,7 @@ chatForm.addEventListener("submit", async (event) => {
   } catch (error) {
     statusLabel.textContent = t("sendError", error.message);
     button.disabled = false;
+    narrationButton.disabled = false;
   }
 });
 
@@ -329,6 +360,7 @@ function processSession(session) {
   if (["completed", "failed", "cancelled"].includes(session.status)) {
     form.querySelector("button").disabled = false;
     chatForm.querySelector("button").disabled = false;
+    narrationButton.disabled = false;
     narrationText.disabled = false;
   }
   restoreCharacterAfterTurn(session);

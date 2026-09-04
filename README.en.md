@@ -24,6 +24,7 @@ The video was compressed for GitHub and therefore looks slightly worse than the 
 - Dynamic video chunks that favor punctuation and begin TTS around 22–26 Japanese characters while protecting word endings
 - Pipelined TTS audio preparation and LTX video generation
 - Drag-and-drop character images and TXT files
+- Direct narration without the LLM, accepting pasted, typed, or dropped TXT content
 - Japanese/English UI switching plus an independent Auto/Japanese/English conversation-language setting
 - Chunk assembly based on actual WAV duration
 - LTX-2.5 Audio-to-Video generation
@@ -33,12 +34,12 @@ The video was compressed for GitHub and therefore looks slightly worse than the 
 - Original TTS audio replaces the LTX-generated audio
 - Playback starts with one available chunk; two alternating video elements preload the next clip
 - Dynamic startup buffering and measured transition-gap display
-- Short utterances are generated as five-second clips. Playback retains the silent tail while the next clip is pending, but skips it once the next clip is ready
+- Short utterances are generated as five-second clips and advance after speech when the next clip is ready. Speech longer than five seconds keeps the final video frame visible while the original TTS audio finishes
 - The first clip of every turn uses a lower resolution with the same framing and four steps; later clips use the selected resolution and eight steps
-- Seed 1004, the most reliable observed photorealistic articulation seed, is used for every photorealistic chunk
+- Seed 1004, the most reliable observed photorealistic articulation seed, is the default and can be changed in the UI for every photorealistic chunk
 - Photorealistic fast mode uses `modality_scale=1.3` only while preparing the anchor; Strong Lip Motion also applies it during conversation
 - At the beginning of each turn, the original character image covers the previous turn until the new video starts
-- User-selectable generation policy: Standard uses variable seeds and within-turn frame chaining; Photorealistic reuses the speaking anchor and seed 1004
+- User-selectable generation policy: Standard varies each chunk from the selected base seed and chains frames within a turn; Photorealistic reuses the speaking anchor and selected seed
 - Gateway jobs are polled every 100 ms
 - SSE status updates and LLM/TTS/LTX timestamps are recorded
 - Gateway and TTS errors are shown and persisted
@@ -77,6 +78,7 @@ The Gateway manages backends exclusively. Unmanaged H3/LTX processes on ports 86
 
 - `POST /api/sessions` — submit the character, text, concept, and settings as multipart data
 - `POST /api/sessions/{id}/messages` — submit a user message and start streaming generation
+- `POST /api/sessions/{id}/narrations` — split and narrate supplied text directly without the LLM
 - `GET /api/sessions/{id}` — retrieve session and chunk status
 - `DELETE /api/sessions/{id}` — cancel after the current chunk finishes
 - `GET /api/sessions/{id}/chunks/{index}/video` — retrieve the MP4 with replaced audio

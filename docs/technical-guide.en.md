@@ -83,7 +83,7 @@ Registration therefore performs the following preparation:
 1. Synthesize the fixed Japanese utterance “Ah, ah, ah, ah” with AivisSpeech.
 2. Pad the conditioning WAV with silence to 5.1 seconds.
 3. Generate a preparation video at the selected profile's native resolution.
-4. Prefer reference quality and successful mouth opening by using eight steps, seed 1004, and `modality_scale=1.3`.
+4. Prefer reference quality and successful mouth opening by using eight steps, the UI-selected seed (default 1004), and `modality_scale=1.3`.
 5. Extract the reliably open-mouth frame at 0.75 seconds with FFmpeg.
 6. Save it as `character-speaking.png` in the session.
 
@@ -103,12 +103,12 @@ In a 384×512 test, the full-resolution anchor improved facial, mouth, and hair 
 4. Assemble approximately five-second video chunks using actual WAV durations.
 5. Pad only the LTX conditioning WAV to video duration plus 0.1 seconds.
 6. Preserve audio completion order and enqueue chunks for video generation.
-7. After LTX generation, mux the original TTS waveform into the final MP4.
+7. After LTX generation, mux the complete original TTS waveform into the final MP4 without truncation.
 8. Announce `playable` over SSE so the browser can preload and play it.
 
 UI and conversation languages are independent. The UI language is stored in browser `localStorage` and survives reloads. `auto` instructs the LLM to answer in the language of the latest user message. English segmentation recognizes periods and word boundaries and uses longer character limits than Japanese. English pronunciation quality in AivisSpeech depends on the selected speaker.
 
-LTX still treats a short first utterance as a five-second video. Its silent tail gives the next job time to finish. Once the next clip is playable, the browser skips the rest of the current clip and advances. This applies at every chunk boundary, not only between the first two clips.
+LTX still treats a short first utterance as a five-second video. Its silent tail gives the next job time to finish. Once the next clip is playable, the browser skips the rest of the current clip and advances. When speech exceeds five seconds, the final video frame remains visible while the complete original TTS audio finishes before advancing. This applies at every chunk boundary, not only between the first two clips.
 
 ## 6. LTX generation parameters
 
@@ -178,8 +178,8 @@ LTX spatial dimensions must be at least 256 and divisible by 32. Frame counts mu
 | Setting | Reference | Seed | Conversation scale | Intended use |
 |---|---|---:|---|---|
 | Standard | Previous clip's final frame within a turn | 1000 + chunk index | None | Illustration/3D and visual continuity |
-| Photorealistic/Fast | `character-speaking.png` for every clip | 1004 | None | Initial latency and continuous playback |
-| Photorealistic/Strong Lip Motion | `character-speaking.png` for every clip | 1004 | 1.3 | Fallback when the mouth does not move |
+| Photorealistic/Fast | `character-speaking.png` for every clip | UI-selected (default 1004) | None | Initial latency and continuous playback |
+| Photorealistic/Strong Lip Motion | `character-speaking.png` for every clip | UI-selected (default 1004) | 1.3 | Fallback when the mouth does not move |
 
 The speaking anchor can leave the mouth slightly open during silence in photorealistic fast mode. This is a deliberate tradeoff against generating speech with a fully closed mouth.
 

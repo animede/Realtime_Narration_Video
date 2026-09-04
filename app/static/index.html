@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Realtime Narration Video</title>
-  <link rel="stylesheet" href="/static/style.css?v=3">
+  <link rel="stylesheet" href="/static/style.css?v=4">
 </head>
 <body>
   <main>
@@ -74,16 +74,21 @@
         </label>
         <div class="options">
           <label><span data-i18n="speakerId">話者ID</span><input name="voice_id" type="number" value="888753760"></label>
+          <label><span data-i18n="videoSeed">動画seed</span><input name="video_seed" type="number" min="0" max="2147483647" step="1" value="1004"></label>
           <label><span data-i18n="chunkSeconds">チャンク秒数</span><input name="target_chunk_seconds" type="number" min="3.5" max="5" step="0.1" value="5"></label>
           <label><span data-i18n="preloadCount">先読み数</span><input name="startup_buffer_chunks" type="number" min="1" max="5" value="1"></label>
         </div>
         <button type="submit" data-i18n="setCharacter">キャラクターを設定</button>
       </form>
-      <span class="drop-zone text-drop side-text-drop" id="text-drop">
-        <input id="text-file" type="file" accept=".txt,text/plain">
-        <span class="text-file-icon">TXT</span>
-        <span class="drop-copy"><b data-i18n="dropText">TXTをドロップ</b><small>UTF-8・Shift_JIS</small></span>
-      </span>
+      <div class="narration-entry side-text-drop" id="text-drop">
+        <label for="narration-source" data-i18n="narrationLabel">朗読させたい文章</label>
+        <textarea id="narration-source" rows="7" placeholder="文章を入力・貼り付け、またはTXTファイルをドロップ" data-i18n-placeholder="narrationPlaceholder"></textarea>
+        <div class="narration-tools">
+          <label class="file-picker"><input id="text-file" type="file" accept=".txt,text/plain"><span data-i18n="selectTextFile">TXTを選択</span></label>
+          <small id="text-file-name" class="file-name">UTF-8・Shift_JIS</small>
+          <button id="narrate-button" type="button" disabled data-i18n="narrate">朗読</button>
+        </div>
+      </div>
     </section>
     <section class="panel player-panel">
       <div class="status-row"><span id="status" data-i18n="idle">待機中</span><span id="buffer"></span></div>
@@ -96,14 +101,13 @@
       <div id="assistant-live" class="assistant-live"></div>
       <form id="chat-form" class="chat-form">
         <div class="chat-entry">
-          <textarea id="narration-text" rows="2" disabled placeholder="キャラクター設定後、メッセージを入力。Enterで送信、Shift+Enterで改行。" data-i18n-placeholder="messagePlaceholder"></textarea>
+          <textarea id="narration-text" rows="2" placeholder="テキストを入力・貼り付け。Enterで送信、Shift+Enterで改行。" data-i18n-placeholder="messagePlaceholder"></textarea>
           <button type="submit" disabled data-i18n="send">送信</button>
         </div>
-        <small id="text-file-name" class="file-name"></small>
       </form>
       <ol id="chunks"></ol>
     </section>
   </main>
-  <script src="/static/app.js?v=10"></script>
+  <script src="/static/app.js?v=14"></script>
 </body>
 </html>
