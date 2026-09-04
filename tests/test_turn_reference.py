@@ -36,6 +36,12 @@ def test_photoreal_character_preparation_creates_speaking_anchor():
     assert 'folder / "character-speaking.png", 0.75' in source
 
 
+def test_speaking_anchor_keeps_the_selected_full_resolution():
+    source = Path("app/orchestrator.py").read_text(encoding="utf-8")
+    assert "preparation_profile = session.video_profile" in source
+    assert "generation_profile(session.video_profile, first_video_of_turn)" in source
+
+
 def test_fast_lip_sync_mode_is_default():
     from app.models import NarrationSession
 

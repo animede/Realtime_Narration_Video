@@ -49,6 +49,12 @@ def test_first_generation_uses_low_latency_variant_for_every_profile():
         assert (startup_fps, startup_frames) == (selected_fps, selected_frames)
 
 
+def test_every_public_profile_has_a_full_resolution_anchor_profile():
+    for selected in STARTUP_PROFILES:
+        assert selected in VIDEO_PROFILES
+        assert generation_profile(selected, False) == selected
+
+
 def test_job_polling_is_low_latency_by_default():
     assert Settings().poll_interval == 0.1
 
