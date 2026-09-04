@@ -1,5 +1,7 @@
 # Realtime Narration Video テクニカルガイド
 
+[English](technical-guide.en.md) | 日本語
+
 最終更新: 2026-09-04
 
 ## 1. 目的
