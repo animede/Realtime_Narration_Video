@@ -13,10 +13,24 @@ from .muxer import mux_original_audio
 from .tts import join_wavs, pad_wav, synthesize_sentence
 
 
-SYSTEM_PROMPT = (
+SYSTEM_PROMPT_JA = (
     "あなたは音声で応答する親切な日本語アシスタントです。質問へ自然な話し言葉で簡潔に答えてください。"
     "Markdown、箇条書き記号、URLの読み上げは避け、一文を短くしてください。"
 )
+
+SYSTEM_PROMPT_EN = (
+    "You are a helpful English-speaking voice assistant. Answer naturally and concisely in spoken English. "
+    "Avoid Markdown, list markers, and reading URLs aloud. Keep each sentence short."
+)
+
+SYSTEM_PROMPT_AUTO = (
+    "You are a helpful voice assistant. Reply in the same language as the user's latest message, using natural, "
+    "concise spoken language. Avoid Markdown, list markers, and reading URLs aloud. Keep each sentence short."
+)
+
+
+def system_prompt(language: str) -> str:
+    return {"ja": SYSTEM_PROMPT_JA, "en": SYSTEM_PROMPT_EN}.get(language, SYSTEM_PROMPT_AUTO)
 
 
 class Orchestrator:
@@ -58,8 +72,9 @@ class Orchestrator:
             if session.character_mode != "photoreal":
                 await load_task
             else:
+                anchor_text = "Ah. Ah. Ah. Ah." if session.conversation_language == "en" else "あー、あー、あー、あー。"
                 speech_task = asyncio.create_task(synthesize_sentence(
-                    self.settings.tts_url, session.voice_id, "あー、あー、あー、あー。"
+                    self.settings.tts_url, session.voice_id, anchor_text
                 ))
                 _, (wav, _) = await asyncio.gather(load_task, speech_task)
                 folder = self.settings.data_dir / session.id
@@ -239,7 +254,7 @@ class Orchestrator:
             self.save(session)
 
             async def receiver_with_labels() -> None:
-                history = [{"role": "system", "content": SYSTEM_PROMPT}]
+                history = [{"role": "system", "content": system_prompt(session.conversation_language)}]
                 history.extend(item.model_dump() for item in session.messages[-20:])
                 buffer = ""
                 async for delta in llm.stream(history):
@@ -248,14 +263,16 @@ class Orchestrator:
                     assistant_parts.append(delta)
                     session.assistant_text = "".join(assistant_parts)
                     buffer += delta
-                    fragments, buffer = pop_speakable(buffer)
+                    fragments, buffer = pop_speakable(buffer, language=session.conversation_language)
                     for fragment in fragments:
                         task = asyncio.create_task(synthesize_sentence(
                             self.settings.tts_url, session.voice_id, fragment
                         ))
                         tts_queue.put_nowait((task, fragment, time()))
                     self.save(session)
-                fragments, _ = pop_speakable(buffer, force=True)
+                fragments, _ = pop_speakable(
+                    buffer, force=True, language=session.conversation_language
+                )
                 for fragment in fragments:
                     task = asyncio.create_task(synthesize_sentence(
                         self.settings.tts_url, session.voice_id, fragment

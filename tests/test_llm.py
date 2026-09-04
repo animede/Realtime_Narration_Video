@@ -73,3 +73,18 @@ def test_stream_chunker_does_not_split_japanese_verb_inflection():
     assert parts[1] == "教えていただけますか。"
     assert parts[2] == "例えば、"
     assert rest == ""
+
+
+def test_english_stream_chunker_emits_sentence():
+    parts, rest = pop_speakable("Good morning. How can I help", language="en")
+    assert parts == ["Good morning."]
+    assert rest == "How can I help"
+
+
+def test_english_stream_chunker_splits_on_word_boundary():
+    text = "This is a deliberately long English response that should split cleanly between words while streaming"
+    parts, rest = pop_speakable(text, language="en")
+    assert parts
+    assert parts[0][-1].isalpha()
+    assert text.startswith(parts[0])
+    assert not rest.startswith(" ")

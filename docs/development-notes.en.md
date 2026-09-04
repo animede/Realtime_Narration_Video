@@ -224,6 +224,8 @@ Other UI changes:
 - The waiting image uses the same centered crop as the video frame
 - Editing settings re-enables the Update Settings button
 - Photorealistic workarounds are user-selectable and do not add unnecessary 3D latency
+- Japanese/English UI selection is persisted in the browser
+- Conversation language is independent of UI language; Auto/Japanese/English select the LLM prompt and segmentation rules
 
 ## 9. Major defects encountered
 

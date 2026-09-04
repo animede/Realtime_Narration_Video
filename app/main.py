@@ -57,6 +57,8 @@ async def create_session(
     video_profile: str = Form("20fps-hq"),
     character_mode: str = Form("standard"),
     lip_sync_mode: str = Form("fast"),
+    ui_language: str = Form("ja"),
+    conversation_language: str = Form("auto"),
     target_chunk_seconds: float = Form(settings.target_chunk_seconds),
     startup_buffer_chunks: int = Form(settings.startup_buffer_chunks),
     character: UploadFile = File(...),
@@ -74,9 +76,14 @@ async def create_session(
         raise HTTPException(400, "キャラクター種別が不正です")
     if lip_sync_mode not in {"fast", "strong"}:
         raise HTTPException(400, "リップシンク設定が不正です")
+    if ui_language not in {"ja", "en"}:
+        raise HTTPException(400, "UI言語が不正です")
+    if conversation_language not in {"auto", "ja", "en"}:
+        raise HTTPException(400, "会話言語が不正です")
     session = NarrationSession(
         text=cleaned, concept=concept.strip(), voice_id=voice_id, video_profile=video_profile,
         character_mode=character_mode, lip_sync_mode=lip_sync_mode,
+        ui_language=ui_language, conversation_language=conversation_language,
         target_chunk_seconds=target_chunk_seconds,
         startup_buffer_chunks=startup_buffer_chunks,
     )

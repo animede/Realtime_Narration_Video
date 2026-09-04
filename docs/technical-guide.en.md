@@ -56,6 +56,8 @@ Default endpoints use localhost. Keep credentials and deployment addresses only 
 | `character` | PNG, JPEG, or WebP |
 | `character_mode` | `standard` or `photoreal` |
 | `lip_sync_mode` | `fast` or `strong` |
+| `ui_language` | `ja` or `en`; controls display text |
+| `conversation_language` | `auto`, `ja`, or `en`; controls LLM output and segmentation |
 | `video_profile` | Public profile selected in the UI |
 | `voice_id` | AivisSpeech speaker ID |
 | `target_chunk_seconds` | 3.5–5.0 seconds |
@@ -103,6 +105,8 @@ In a 384×512 test, the full-resolution anchor improved facial, mouth, and hair 
 6. Preserve audio completion order and enqueue chunks for video generation.
 7. After LTX generation, mux the original TTS waveform into the final MP4.
 8. Announce `playable` over SSE so the browser can preload and play it.
+
+UI and conversation languages are independent. The UI language is stored in browser `localStorage` and survives reloads. `auto` instructs the LLM to answer in the language of the latest user message. English segmentation recognizes periods and word boundaries and uses longer character limits than Japanese. English pronunciation quality in AivisSpeech depends on the selected speaker.
 
 LTX still treats a short first utterance as a five-second video. Its silent tail gives the next job time to finish. Once the next clip is playable, the browser skips the rest of the current clip and advances. This applies at every chunk boundary, not only between the first two clips.
 

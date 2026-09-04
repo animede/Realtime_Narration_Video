@@ -16,6 +16,102 @@ const textDrop = document.querySelector("#text-drop");
 const textFileInput = document.querySelector("#text-file");
 const narrationText = document.querySelector("#narration-text");
 const textFileName = document.querySelector("#text-file-name");
+const uiLanguageSelect = document.querySelector("#ui-language");
+const uiLanguageForm = document.querySelector("#ui-language-form");
+const messages = {
+  ja: {
+    uiLanguage: "表示言語", tagline: "文章を約5秒ずつ音声化し、生成できた映像から順番に再生します。",
+    characterImage: "キャラクター画像", characterPreview: "キャラクタープレビュー", dropImage: "画像をドロップ",
+    dropImageHint: "PNG・JPEG・WebP／クリックして選択", sceneDirection: "映像の方向性",
+    scenePlaceholder: "落ち着いたスタジオで説明する", characterType: "キャラクター種別",
+    characterStandard: "標準（イラスト・3D）", characterPhotoreal: "実写・口動作優先",
+    lipSetting: "実写の発話設定", lipFast: "高速（口開き画像を使用）",
+    lipStrong: "口動作優先（会話もmodality 1.3）", videoProfile: "動画プロファイル",
+    profile16: "16fps・解像度優先", profile20: "20fps・バランス", profile24: "24fps・動き優先",
+    profilePeople: "640×384（5:3 人物向け）", profileStable: "576×384（3:2 安定）",
+    profilePortrait34: "384×512（3:4 縦型）", profilePortrait35: "384×640（3:5 縦型・実験）",
+    profilePortrait916: "288×512（9:16 縦型）",
+    conversationLanguage: "会話言語", languageAuto: "自動（入力に合わせる）", languageJapanese: "日本語",
+    languageEnglish: "英語", speakerId: "話者ID", chunkSeconds: "チャンク秒数", preloadCount: "先読み数",
+    setCharacter: "キャラクターを設定", updateSettings: "設定を更新", configured: "設定済み",
+    dropText: "TXTをドロップ", idle: "待機中", configuredCharacter: "設定したキャラクター",
+    captionPlaceholder: "生成を開始すると、ここに読み上げ内容が表示されます。",
+    messagePlaceholder: "キャラクター設定後、メッセージを入力。Enterで送信、Shift+Enterで改行。", send: "送信",
+    queued: "チャット入力待ち", preparing: "キャラクターを準備中", chatting: "Gemma 4が応答中",
+    synthesizing: "音声を合成中", generating: "映像を生成中", playable: "再生可能", completed: "生成完了",
+    failed: "エラー", cancelled: "キャンセル済み", preparingModel: "モデルと発話用画像を準備中",
+    imageTypeError: "PNG・JPEG・WebP画像を選択してください", textTypeError: "TXTファイルを選択してください",
+    textSizeError: "TXTファイルは1MB以内にしてください", loadedFile: name => `${name} を読み込みました`,
+    loadError: value => `読込エラー: ${value}`, error: value => `エラー: ${value}`,
+    sendError: value => `送信エラー: ${value}`, pollError: value => `状態取得エラー: ${value}`,
+    buffer: (count, seconds) => `準備済み ${count}本・${seconds}秒`, switchGap: ms => `・切替 ${ms}ms`,
+    playRequired: "再生ボタンを押してください"
+  },
+  en: {
+    uiLanguage: "Display language", tagline: "Speech is generated in roughly five-second chunks and completed videos play in order.",
+    characterImage: "Character image", characterPreview: "Character preview", dropImage: "Drop an image",
+    dropImageHint: "PNG, JPEG, or WebP / click to select", sceneDirection: "Scene direction",
+    scenePlaceholder: "Explain in a calm studio", characterType: "Character type",
+    characterStandard: "Standard (illustration / 3D)", characterPhotoreal: "Photorealistic / lip motion",
+    lipSetting: "Photorealistic speech", lipFast: "Fast (use open-mouth anchor)",
+    lipStrong: "Strong lip motion (modality 1.3 in chat)", videoProfile: "Video profile",
+    profile16: "16 fps / resolution", profile20: "20 fps / balanced", profile24: "24 fps / motion",
+    profilePeople: "640×384 (5:3 / people)", profileStable: "576×384 (3:2 / stable)",
+    profilePortrait34: "384×512 (3:4 portrait)", profilePortrait35: "384×640 (3:5 portrait / experimental)",
+    profilePortrait916: "288×512 (9:16 portrait)",
+    conversationLanguage: "Conversation language", languageAuto: "Auto (match input)", languageJapanese: "Japanese",
+    languageEnglish: "English", speakerId: "Speaker ID", chunkSeconds: "Chunk seconds", preloadCount: "Startup buffer",
+    setCharacter: "Set character", updateSettings: "Update settings", configured: "Configured",
+    dropText: "Drop a TXT file", idle: "Idle", configuredCharacter: "Configured character",
+    captionPlaceholder: "Spoken text will appear here after generation starts.",
+    messagePlaceholder: "Enter a message after setting the character. Enter sends; Shift+Enter adds a line.", send: "Send",
+    queued: "Ready for chat", preparing: "Preparing character", chatting: "Gemma 4 is responding",
+    synthesizing: "Synthesizing speech", generating: "Generating video", playable: "Playable", completed: "Generation complete",
+    failed: "Error", cancelled: "Cancelled", preparingModel: "Preparing the model and speaking anchor",
+    imageTypeError: "Select a PNG, JPEG, or WebP image.", textTypeError: "Select a TXT file.",
+    textSizeError: "TXT files must be no larger than 1 MB.", loadedFile: name => `Loaded ${name}`,
+    loadError: value => `Read error: ${value}`, error: value => `Error: ${value}`,
+    sendError: value => `Send error: ${value}`, pollError: value => `Status error: ${value}`,
+    buffer: (count, seconds) => `${count} ready / ${seconds}s`, switchGap: ms => ` / switch ${ms}ms`,
+    playRequired: "Press the play button to continue"
+  }
+};
+let uiLanguage = localStorage.getItem("uiLanguage") || (navigator.language.startsWith("ja") ? "ja" : "en");
+if (!messages[uiLanguage]) uiLanguage = "ja";
+
+function t(key, ...args) {
+  const value = messages[uiLanguage][key] ?? messages.ja[key] ?? key;
+  return typeof value === "function" ? value(...args) : value;
+}
+
+function applyLanguage() {
+  document.documentElement.lang = uiLanguage;
+  uiLanguageSelect.value = uiLanguage;
+  uiLanguageForm.value = uiLanguage;
+  document.querySelectorAll("[data-i18n]").forEach(element => {
+    element.textContent = t(element.dataset.i18n);
+  });
+  document.querySelectorAll("[data-i18n-placeholder]").forEach(element => {
+    element.placeholder = t(element.dataset.i18nPlaceholder);
+  });
+  document.querySelectorAll("[data-i18n-alt]").forEach(element => {
+    element.alt = t(element.dataset.i18nAlt);
+  });
+  document.querySelectorAll("[data-i18n-label]").forEach(element => {
+    element.label = t(element.dataset.i18nLabel);
+  });
+  if (latestSession) processSession(latestSession);
+  const settingsButton = form.querySelector("button");
+  if (sessionId && !latestSession?.error) {
+    settingsButton.textContent = t(settingsDirty ? "updateSettings" : "configured");
+  }
+}
+
+uiLanguageSelect.addEventListener("change", () => {
+  uiLanguage = uiLanguageSelect.value;
+  localStorage.setItem("uiLanguage", uiLanguage);
+  applyLanguage();
+});
 let sessionId = null;
 let nextIndex = 0;
 let playingIndex = null;
@@ -26,6 +122,7 @@ let latestSession = null;
 let eventSource = null;
 let lastEndedAt = null;
 let switchGapMs = null;
+let settingsDirty = false;
 const profileSizes = {
   "16fps-resolution": [640, 352], "16fps-5x3": [640, 384], "16fps-3x2": [576, 384],
   "16fps-4x3-resolution": [512, 384], "16fps-portrait-3x4": [384, 512],
@@ -41,6 +138,7 @@ function applyAspectRatio() {
 }
 profileSelect.addEventListener("change", applyAspectRatio);
 applyAspectRatio();
+applyLanguage();
 
 function setDroppedFile(input, file) {
   const transfer = new DataTransfer();
@@ -67,7 +165,7 @@ function installDropZone(zone, onFile) {
 let previewUrl = null;
 function useCharacterFile(file) {
   if (!file.type.startsWith("image/") || !/[.](png|jpe?g|webp)$/i.test(file.name)) {
-    statusLabel.textContent = "PNG・JPEG・WebP画像を選択してください";
+    statusLabel.textContent = t("imageTypeError");
     return;
   }
   setDroppedFile(characterInput, file);
@@ -87,39 +185,35 @@ installDropZone(characterDrop, useCharacterFile);
 
 async function decodeTextFile(file) {
   if (!/[.]txt$/i.test(file.name) && file.type !== "text/plain") {
-    statusLabel.textContent = "TXTファイルを選択してください";
+    statusLabel.textContent = t("textTypeError");
     return;
   }
   if (file.size > 1024 * 1024) {
-    statusLabel.textContent = "TXTファイルは1MB以内にしてください";
+    statusLabel.textContent = t("textSizeError");
     return;
   }
   const bytes = new Uint8Array(await file.arrayBuffer());
   let text = new TextDecoder("utf-8", {fatal: false}).decode(bytes);
   if (text.includes("\uFFFD")) text = new TextDecoder("shift_jis").decode(bytes);
   narrationText.value = text.replace(/^\uFEFF/, "").replace(/\r\n?/g, "\n").trim();
-  textFileName.textContent = `${file.name} を読み込みました（${narrationText.value.length.toLocaleString()}文字）`;
+  textFileName.textContent = `${t("loadedFile", file.name)} (${narrationText.value.length.toLocaleString()} chars)`;
   textDrop.classList.add("has-file");
   narrationText.dispatchEvent(new Event("input", {bubbles: true}));
 }
 
 textFileInput.addEventListener("change", () => {
   const file = textFileInput.files[0];
-  if (file) decodeTextFile(file).catch(error => { statusLabel.textContent = `読込エラー: ${error.message}`; });
+  if (file) decodeTextFile(file).catch(error => { statusLabel.textContent = t("loadError", error.message); });
 });
 installDropZone(textDrop, file => setDroppedFile(textFileInput, file));
-
-const statusNames = {
-  queued: "チャット入力待ち", preparing: "キャラクターを準備中", chatting: "Gemma 4が応答中", synthesizing: "音声を合成中", generating: "映像を生成中",
-  playable: "再生可能", completed: "生成完了", failed: "エラー", cancelled: "キャンセル済み"
-};
 
 function markSettingsDirty() {
   const button = form.querySelector("button");
   const busy = latestSession && ["chatting", "synthesizing", "generating", "playable"].includes(latestSession.status);
   if (busy) return;
+  settingsDirty = true;
   button.disabled = false;
-  button.textContent = sessionId ? "設定を更新" : "キャラクターを設定";
+  button.textContent = sessionId ? t("updateSettings") : t("setCharacter");
 }
 
 form.querySelectorAll("input, select").forEach(control => {
@@ -130,12 +224,13 @@ form.addEventListener("submit", async (event) => {
   event.preventDefault();
   const button = form.querySelector("button");
   button.disabled = true;
-  statusLabel.textContent = "モデルと発話用画像を準備中";
+  statusLabel.textContent = t("preparingModel");
   try {
     const response = await fetch("/api/sessions", {method: "POST", body: new FormData(form)});
     const data = await response.json();
     if (!response.ok) throw new Error(data.detail || `HTTP ${response.status}`);
     sessionId = data.id;
+    settingsDirty = false;
     nextIndex = 0;
     playingIndex = null;
     playbackStarted = false;
@@ -145,11 +240,11 @@ form.addEventListener("submit", async (event) => {
     connectEvents();
     narrationText.disabled = false;
     chatForm.querySelector("button").disabled = false;
-    statusLabel.textContent = "チャット入力待ち";
-    button.textContent = "設定済み";
+    statusLabel.textContent = t("queued");
+    button.textContent = t("configured");
     narrationText.focus();
   } catch (error) {
-    statusLabel.textContent = `エラー: ${error.message}`;
+    statusLabel.textContent = t("error", error.message);
     button.disabled = false;
   }
 });
@@ -176,7 +271,7 @@ chatForm.addEventListener("submit", async (event) => {
     stageCharacter.classList.add("visible");
     connectEvents();
   } catch (error) {
-    statusLabel.textContent = `送信エラー: ${error.message}`;
+    statusLabel.textContent = t("sendError", error.message);
     button.disabled = false;
   }
 });
@@ -203,21 +298,21 @@ async function poll() {
     const session = await response.json();
     processSession(session);
   } catch (error) {
-    statusLabel.textContent = `状態取得エラー: ${error.message}`;
+    statusLabel.textContent = t("pollError", error.message);
   }
 }
 
 function processSession(session) {
   latestSession = session;
-  statusLabel.textContent = statusNames[session.status] || session.status;
+  statusLabel.textContent = t(session.status);
   if (session.error) statusLabel.textContent += `: ${session.error}`;
   assistantLive.textContent = session.assistant_text || "";
   renderChunks(session.chunks);
   const readyAhead = session.chunks.filter(chunk => chunk.status === "playable" && chunk.index >= nextIndex).length;
   const readyChunks = session.chunks.filter(chunk => chunk.status === "playable" && chunk.index >= nextIndex);
   const bufferedSeconds = readyChunks.reduce((total, chunk) => total + (chunk.duration || 0), 0);
-  const gapText = switchGapMs === null ? "" : `・切替 ${Math.round(switchGapMs)}ms`;
-  bufferLabel.textContent = `準備済み ${readyAhead}本・${bufferedSeconds.toFixed(1)}秒${gapText}`;
+  const gapText = switchGapMs === null ? "" : t("switchGap", Math.round(switchGapMs));
+  bufferLabel.textContent = `${t("buffer", readyAhead, bufferedSeconds.toFixed(1))}${gapText}`;
   if (!playbackStarted && readyChunks.length) {
     // Decode the first file while waiting for enough future media.
     loadPlayer(players[activePlayer], readyChunks[0]);
@@ -277,7 +372,7 @@ function playNext(chunks) {
   preloadedIndex = null;
   playingIndex = chunk.index;
   caption.textContent = chunk.text;
-  player.play().catch(() => { statusLabel.textContent = "再生ボタンを押してください"; });
+  player.play().catch(() => { statusLabel.textContent = t("playRequired"); });
   preloadFollowing(chunks);
 }
 
@@ -322,7 +417,7 @@ function renderChunks(chunks) {
   chunkList.replaceChildren(...chunks.map(chunk => {
     const item = document.createElement("li");
     item.className = chunk.status;
-    item.textContent = `${chunk.index + 1}. ${chunk.text} — ${chunk.status}`;
+    item.textContent = `${chunk.index + 1}. ${chunk.text} — ${t(chunk.status)}`;
     return item;
   }));
 }

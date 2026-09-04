@@ -62,6 +62,8 @@ cp .env.example .env
 | `character` | PNG、JPEG、WebP |
 | `character_mode` | `standard`または`photoreal` |
 | `lip_sync_mode` | `fast`または`strong` |
+| `ui_language` | `ja`または`en`。画面表示に使用 |
+| `conversation_language` | `auto`、`ja`、`en`。LLM応答と文分割に使用 |
 | `video_profile` | UIで選択する公開プロファイル名 |
 | `voice_id` | AivisSpeechの話者ID |
 | `target_chunk_seconds` | 3.5〜5.0秒 |
@@ -109,6 +111,8 @@ FFmpegの`-ss`は入力指定後に置きます。入力前の高速シークで
 6. 音声完成順を保って動画キューへ投入
 7. LTX生成後、元TTS音声を最終MP4へmux
 8. SSEで`playable`を通知し、ブラウザーが先読み・再生
+
+UI言語と会話言語は独立しています。UI言語はブラウザーの`localStorage`へ保存され、画面を再読込しても維持されます。会話言語の`auto`はLLMへ最新ユーザー入力と同じ言語で返答するよう指示します。英語ではピリオドと単語境界を認識し、日本語より長い文字数で発話単位を構成します。AivisSpeechによる英語の発音品質は選択話者に依存します。
 
 短い先頭発話もLTXでは5秒動画として扱います。発話後の無音区間は後続動画を準備する時間になりますが、次動画が再生可能になった後はブラウザーが現在動画の残りを打ち切り、次の発話へ移ります。この判定は先頭だけでなく全チャンク境界に適用されます。
 

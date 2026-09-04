@@ -24,6 +24,7 @@ The video was compressed for GitHub and therefore looks slightly worse than the 
 - Dynamic video chunks that favor punctuation and begin TTS around 22–26 Japanese characters while protecting word endings
 - Pipelined TTS audio preparation and LTX video generation
 - Drag-and-drop character images and TXT files
+- Japanese/English UI switching plus an independent Auto/Japanese/English conversation-language setting
 - Chunk assembly based on actual WAV duration
 - LTX-2.5 Audio-to-Video generation
 - The same 16/20/24 fps landscape, 4:3, and portrait profiles as Realtime Video Studio
