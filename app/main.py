@@ -11,7 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from .config import settings
-from .gateway import VIDEO_PROFILES
+from .gateway import STARTUP_PROFILES
 from .models import ChatMessage, NarrationSession
 from .orchestrator import Orchestrator
 
@@ -68,7 +68,7 @@ async def create_session(
         raise HTTPException(400, "チャンク目標時間は3.5～5.0秒にしてください")
     if not 1 <= startup_buffer_chunks <= 5:
         raise HTTPException(400, "先読みチャンク数は1～5にしてください")
-    if video_profile not in VIDEO_PROFILES:
+    if video_profile not in STARTUP_PROFILES:
         raise HTTPException(400, "動画プロファイルが不正です")
     if character_mode not in {"standard", "photoreal"}:
         raise HTTPException(400, "キャラクター種別が不正です")

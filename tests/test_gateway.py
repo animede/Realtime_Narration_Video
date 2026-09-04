@@ -1,4 +1,4 @@
-from app.gateway import GatewayClient, VIDEO_PROFILES, generation_profile, profile_duration
+from app.gateway import STARTUP_PROFILES, GatewayClient, VIDEO_PROFILES, generation_profile, profile_duration
 from app.config import Settings
 from app.models import NarrationSession
 from app.orchestrator import Orchestrator
@@ -33,10 +33,20 @@ def test_profiles_produce_full_playback_window():
     assert profile_duration("20fps-hq") == 4.8
 
 
-def test_first_portrait_generation_uses_low_latency_profile():
-    assert generation_profile("16fps-portrait-3x4", True) == "16fps-portrait-3x4-fast"
-    assert generation_profile("16fps-portrait-3x4", False) == "16fps-portrait-3x4"
-    assert generation_profile("20fps-hq", True) == "20fps-hq"
+def test_first_generation_uses_low_latency_variant_for_every_profile():
+    assert set(STARTUP_PROFILES) == {
+        "16fps-resolution", "16fps-4x3-resolution", "16fps-5x3", "16fps-3x2",
+        "16fps-portrait-3x4", "16fps-portrait", "20fps-hq", "20fps-4x3-balanced",
+        "24fps-fast", "24fps-3x2", "24fps-portrait",
+    }
+    for selected, startup in STARTUP_PROFILES.items():
+        selected_width, selected_height, selected_fps, selected_frames = VIDEO_PROFILES[selected]
+        startup_width, startup_height, startup_fps, startup_frames = VIDEO_PROFILES[startup]
+        assert generation_profile(selected, True) == startup
+        assert generation_profile(selected, False) == selected
+        assert startup_width >= 256 and startup_height >= 256
+        assert startup_width * startup_height < selected_width * selected_height
+        assert (startup_fps, startup_frames) == (selected_fps, selected_frames)
 
 
 def test_job_polling_is_low_latency_by_default():

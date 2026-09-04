@@ -31,7 +31,8 @@ def test_photoreal_character_preparation_creates_speaking_anchor():
     source = Path("app/orchestrator.py").read_text(encoding="utf-8")
     assert 'self.settings.tts_url, session.voice_id, "あー。"' in source
     assert 'folder / "character-speaking.png"' in source
-    assert '"16fps-portrait-3x4-fast", 4, 81, 1.3' in source
+    assert 'preparation_profile = generation_profile(session.video_profile, True)' in source
+    assert '1004, preparation_profile, 4, preparation_frames, 1.3' in source
 
 
 def test_fast_lip_sync_mode_is_default():

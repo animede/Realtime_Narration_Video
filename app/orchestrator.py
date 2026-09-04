@@ -68,11 +68,13 @@ class Orchestrator:
                 image_id, audio_id = await asyncio.gather(
                     gateway.upload(character), gateway.upload(condition)
                 )
+                preparation_profile = generation_profile(session.video_profile, True)
+                _, _, _, preparation_frames = VIDEO_PROFILES[preparation_profile]
                 result = await gateway.generate(
                     image_id, audio_id,
                     "Medium close-up of the same character clearly saying a sustained vowel. "
                     "The lips and jaw open visibly while identity and camera remain stable.",
-                    1004, "16fps-portrait-3x4-fast", 4, 81, 1.3,
+                    1004, preparation_profile, 4, preparation_frames, 1.3,
                 )
                 raw = folder / "character-preparation.mp4"
                 await gateway.download(result["result"]["video_url"], raw)
