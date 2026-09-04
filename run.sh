@@ -7,4 +7,4 @@ if [[ -f .env ]]; then
   source .env
   set +a
 fi
-exec uvicorn app.main:app --host "${HOST:-localhost}" --port "${PORT:-8782}"
+exec .venv/bin/uvicorn app.main:app --host "${HOST:-localhost}" --port "${PORT:-8782}"
