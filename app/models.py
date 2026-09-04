@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 
 class SessionStatus(StrEnum):
     QUEUED = "queued"
+    PREPARING = "preparing"
     CHATTING = "chatting"
     SYNTHESIZING = "synthesizing"
     GENERATING = "generating"
@@ -33,6 +34,7 @@ class Chunk(BaseModel):
     generated_seed: int | None = None
     generated_frames: int | None = None
     audio_modality_scale: float | None = None
+    modality_scale: float | None = None
     tts_started_at: float | None = None
     audio_ready_at: float | None = None
     video_started_at: float | None = None
@@ -58,6 +60,8 @@ class NarrationSession(BaseModel):
     chunks: list[Chunk] = Field(default_factory=list)
     messages: list[ChatMessage] = Field(default_factory=list)
     assistant_text: str = ""
+    character_prepared: bool = False
+    character_preparation_seconds: float | None = None
     llm_started_at: float | None = None
     llm_first_delta_at: float | None = None
     llm_completed_at: float | None = None

@@ -87,6 +87,10 @@ async def create_session(
         shutil.copyfileobj(character.file, output)
     orchestrator.save(session)
     orchestrator.register(session)
+    try:
+        await orchestrator.prepare_character(session, character_path)
+    except Exception as exc:
+        raise HTTPException(502, f"キャラクター準備に失敗しました: {exc}") from exc
     if cleaned:
         session.messages.append(ChatMessage(role="user", content=cleaned))
         orchestrator.chat(session, character_path)

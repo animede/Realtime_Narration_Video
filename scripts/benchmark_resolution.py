@@ -28,7 +28,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--runs", type=int, default=5, help="Runs per resolution")
     parser.add_argument("--seed", type=int, default=1004)
     parser.add_argument("--steps", type=int, default=4)
-    parser.add_argument("--audio-modality-scale", type=float, default=1.0)
+    parser.add_argument("--modality-scale", type=float)
     parser.add_argument("--prompt", default="A character speaks naturally to the supplied audio.")
     parser.add_argument("--output", type=Path)
     return parser.parse_args()
@@ -54,7 +54,7 @@ async def main() -> None:
         started = perf_counter()
         result = await gateway.generate(
             image_id, audio_id, args.prompt, args.seed, profile, args.steps, 81,
-            args.audio_modality_scale,
+            args.modality_scale,
         )
         elapsed = perf_counter() - started
         server_seconds = result.get("result", {}).get("generation_seconds")
@@ -88,7 +88,7 @@ async def main() -> None:
             "seed": args.seed,
             "steps": args.steps,
             "frames": 81,
-            "audio_modality_scale": args.audio_modality_scale,
+            "modality_scale": args.modality_scale,
             "same_image_audio_prompt": True,
         },
         "summary": summaries,

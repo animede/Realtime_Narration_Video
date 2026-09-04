@@ -45,6 +45,17 @@ class GatewayClient:
         self.preset = preset
         self.poll_interval = poll_interval
 
+    async def load_backend(self) -> dict:
+        """Load the configured LTX backend early; an identical active setup is a no-op."""
+        async with httpx.AsyncClient(timeout=180) as client:
+            response = await client.post(
+                f"{self.base_url}/api/v1/backend/load",
+                json={"backend": "ltx25", "preset": self.preset},
+            )
+        if response.is_error:
+            raise GatewayError(f"動画モデル準備失敗 HTTP {response.status_code}: {response.text[:500]}")
+        return response.json()
+
     async def upload(self, path: Path) -> str:
         async with httpx.AsyncClient(timeout=180) as client:
             with path.open("rb") as stream:
@@ -58,7 +69,7 @@ class GatewayClient:
     async def generate(self, image_id: str, audio_id: str, prompt: str, seed: int,
                        video_profile: str = "20fps-hq", steps: int = 8,
                        num_frames: int | None = None,
-                       audio_modality_scale: float = 1.0) -> dict:
+                       modality_scale: float | None = None) -> dict:
         width, height, fps, frames = VIDEO_PROFILES[video_profile]
         frames = num_frames or frames
         body = {
@@ -68,14 +79,12 @@ class GatewayClient:
                        "num_frames": frames, "fps": fps, "steps": steps,
                        "guidance_scale": 3.0, "seed": seed},
             "asset_ids": [audio_id, image_id],
-            "extra": {
-                "upscale": False, "decoder": "vae", "audio_start": 0,
-                "audio_guidance_scale": 1.0,
-                "audio_modality_scale": audio_modality_scale,
-            },
+            "extra": {"upscale": False, "decoder": "vae", "audio_start": 0},
             "auto_load": True,
             "preset": self.preset,
         }
+        if modality_scale is not None:
+            body["extra"]["modality_scale"] = modality_scale
         async with httpx.AsyncClient(timeout=180) as client:
             response = await client.post(f"{self.base_url}/api/v1/generate", json=body)
             if response.is_error:

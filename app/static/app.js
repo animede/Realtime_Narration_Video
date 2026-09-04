@@ -110,7 +110,7 @@ textFileInput.addEventListener("change", () => {
 installDropZone(textDrop, file => setDroppedFile(textFileInput, file));
 
 const statusNames = {
-  queued: "チャット入力待ち", chatting: "Gemma 4が応答中", synthesizing: "音声を合成中", generating: "映像を生成中",
+  queued: "チャット入力待ち", preparing: "キャラクターを準備中", chatting: "Gemma 4が応答中", synthesizing: "音声を合成中", generating: "映像を生成中",
   playable: "再生可能", completed: "生成完了", failed: "エラー", cancelled: "キャンセル済み"
 };
 
@@ -130,7 +130,7 @@ form.addEventListener("submit", async (event) => {
   event.preventDefault();
   const button = form.querySelector("button");
   button.disabled = true;
-  statusLabel.textContent = "送信中";
+  statusLabel.textContent = "モデルと発話用画像を準備中";
   try {
     const response = await fetch("/api/sessions", {method: "POST", body: new FormData(form)});
     const data = await response.json();

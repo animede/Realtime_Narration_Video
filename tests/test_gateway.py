@@ -44,7 +44,7 @@ def test_job_polling_is_low_latency_by_default():
 
 
 def test_gateway_generate_defaults_to_eight_steps():
-    assert GatewayClient.generate.__defaults__ == ("20fps-hq", 8, None, 1.0)
+    assert GatewayClient.generate.__defaults__ == ("20fps-hq", 8, None, None)
 
 
 def test_video_prompt_contains_exact_spoken_text_and_articulation():

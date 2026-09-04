@@ -45,6 +45,52 @@ class Orchestrator:
         temporary.write_text(session.model_dump_json(indent=2), encoding="utf-8")
         temporary.replace(folder / "session.json")
 
+    async def prepare_character(self, session: NarrationSession, character: Path) -> None:
+        """Preload LTX and create an open-mouth reference for photoreal characters."""
+        started_at = time()
+        session.status = SessionStatus.PREPARING
+        session.error = None
+        self.save(session)
+        gateway = GatewayClient(self.settings.gateway_url, self.settings.gateway_preset,
+                                self.settings.poll_interval)
+        try:
+            load_task = asyncio.create_task(gateway.load_backend())
+            if session.character_mode != "photoreal":
+                await load_task
+            else:
+                speech_task = asyncio.create_task(synthesize_sentence(
+                    self.settings.tts_url, session.voice_id, "あー。"
+                ))
+                _, (wav, speech_duration) = await asyncio.gather(load_task, speech_task)
+                folder = self.settings.data_dir / session.id
+                condition = folder / "character-preparation.wav"
+                condition.write_bytes(pad_wav(wav, 5.1))
+                image_id, audio_id = await asyncio.gather(
+                    gateway.upload(character), gateway.upload(condition)
+                )
+                result = await gateway.generate(
+                    image_id, audio_id,
+                    "Medium close-up of the same character clearly saying a sustained vowel. "
+                    "The lips and jaw open visibly while identity and camera remain stable.",
+                    1004, "16fps-portrait-3x4-fast", 4, 81, 1.3,
+                )
+                raw = folder / "character-preparation.mp4"
+                await gateway.download(result["result"]["video_url"], raw)
+                # LTX's visible articulation trails the very short source vowel. In
+                # the five-second preparation clip the mouth is stably open around
+                # the midpoint, while the opening frames still match the closed input.
+                await self._frame_at(raw, folder / "character-speaking.png", 2.5)
+                raw.unlink(missing_ok=True)
+            session.character_prepared = True
+            session.character_preparation_seconds = round(time() - started_at, 3)
+            session.status = SessionStatus.QUEUED
+            self.save(session)
+        except Exception as exc:
+            session.status = SessionStatus.FAILED
+            session.error = str(exc)
+            self.save(session)
+            raise
+
     async def _run_chat(self, session: NarrationSession, character: Path) -> None:
         folder = self.settings.data_dir / session.id
         gateway = GatewayClient(self.settings.gateway_url, self.settings.gateway_preset,
@@ -113,9 +159,11 @@ class Orchestrator:
             await video_queue.put(None)
 
         async def generate_video() -> None:
-            character_id = await gateway.upload(character)
+            speaking_reference = folder / "character-speaking.png"
+            reference = speaking_reference if session.character_mode == "photoreal" and speaking_reference.is_file() else character
+            character_id = await gateway.upload(reference)
             first_video_of_turn = True
-            chain_path = character
+            chain_path = reference
             while True:
                 chunk = await video_queue.get()
                 if chunk is None:
@@ -128,7 +176,7 @@ class Orchestrator:
                 self.save(session)
                 image_id = (
                     character_id
-                    if session.character_mode == "photoreal" or chain_path == character
+                    if session.character_mode == "photoreal" or chain_path == reference
                     else await gateway.upload(chain_path)
                 )
                 audio_path = folder / f"chunk-{chunk.index:03}.wav"
@@ -139,18 +187,19 @@ class Orchestrator:
                 # Photoreal tests showed the most consistent articulation with 1004.
                 # Audio, spoken text, and chained reference frames still vary per clip.
                 actual_seed = 1004 if session.character_mode == "photoreal" else 1000 + chunk.index
-                actual_audio_modality_scale = 1.3 if session.character_mode == "photoreal" else 1.0
+                actual_modality_scale = 1.3 if session.character_mode == "photoreal" else None
                 _, _, _, profile_frames = VIDEO_PROFILES[actual_profile]
                 actual_frames = profile_frames
                 chunk.generated_profile = actual_profile
                 chunk.generated_steps = actual_steps
                 chunk.generated_seed = actual_seed
                 chunk.generated_frames = actual_frames
-                chunk.audio_modality_scale = actual_audio_modality_scale
+                chunk.audio_modality_scale = None
+                chunk.modality_scale = actual_modality_scale
                 result = await gateway.generate(
                     image_id, audio_id, self._prompt(chunk.text, session.concept, session.character_mode),
                     actual_seed, actual_profile, actual_steps, actual_frames,
-                    actual_audio_modality_scale,
+                    actual_modality_scale,
                 )
                 first_video_of_turn = False
                 raw = folder / f"chunk-{chunk.index:03}-raw.mp4"
@@ -258,3 +307,13 @@ class Orchestrator:
         _, stderr = await process.communicate()
         if process.returncode or not target.is_file() or target.stat().st_size == 0:
             raise RuntimeError(f"最終フレーム抽出に失敗しました: {stderr.decode()[-500:]}")
+
+    @staticmethod
+    async def _frame_at(video: Path, target: Path, seconds: float) -> None:
+        process = await asyncio.create_subprocess_exec(
+            "ffmpeg", "-y", "-v", "error", "-i", str(video), "-ss", f"{seconds:.3f}",
+            "-frames:v", "1", str(target), stderr=asyncio.subprocess.PIPE,
+        )
+        _, stderr = await process.communicate()
+        if process.returncode or not target.is_file() or target.stat().st_size == 0:
+            raise RuntimeError(f"発話用フレーム抽出に失敗しました: {stderr.decode()[-500:]}")
