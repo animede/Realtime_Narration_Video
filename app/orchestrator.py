@@ -187,7 +187,11 @@ class Orchestrator:
                 # Photoreal tests showed the most consistent articulation with 1004.
                 # Audio, spoken text, and chained reference frames still vary per clip.
                 actual_seed = 1004 if session.character_mode == "photoreal" else 1000 + chunk.index
-                actual_modality_scale = 1.3 if session.character_mode == "photoreal" else None
+                actual_modality_scale = (
+                    1.3
+                    if session.character_mode == "photoreal" and session.lip_sync_mode == "strong"
+                    else None
+                )
                 _, _, _, profile_frames = VIDEO_PROFILES[actual_profile]
                 actual_frames = profile_frames
                 chunk.generated_profile = actual_profile

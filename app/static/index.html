@@ -29,6 +29,12 @@
             <option value="photoreal" selected>実写・口動作優先</option>
           </select>
         </label>
+        <label>実写の発話設定
+          <select name="lip_sync_mode">
+            <option value="fast" selected>高速（口開き画像を使用）</option>
+            <option value="strong">口動作優先（会話もmodality 1.3）</option>
+          </select>
+        </label>
         <label>動画プロファイル
           <select name="video_profile" id="video-profile">
             <optgroup label="16fps・解像度優先">
@@ -82,6 +88,6 @@
       <ol id="chunks"></ol>
     </section>
   </main>
-  <script src="/static/app.js?v=8"></script>
+  <script src="/static/app.js?v=9"></script>
 </body>
 </html>

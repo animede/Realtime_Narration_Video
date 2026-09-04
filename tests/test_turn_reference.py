@@ -22,7 +22,7 @@ def test_all_turn_videos_use_reliable_articulation_seed():
 
 def test_photoreal_videos_use_effective_video_modality_scale():
     source = Path("app/orchestrator.py").read_text(encoding="utf-8")
-    assert 'actual_modality_scale = 1.3 if session.character_mode == "photoreal" else None' in source
+    assert 'session.character_mode == "photoreal" and session.lip_sync_mode == "strong"' in source
     assert 'chunk.modality_scale = actual_modality_scale' in source
     assert '"audio_guidance_scale"' not in Path("app/gateway.py").read_text(encoding="utf-8")
 
@@ -32,6 +32,12 @@ def test_photoreal_character_preparation_creates_speaking_anchor():
     assert 'self.settings.tts_url, session.voice_id, "あー。"' in source
     assert 'folder / "character-speaking.png"' in source
     assert '"16fps-portrait-3x4-fast", 4, 81, 1.3' in source
+
+
+def test_fast_lip_sync_mode_is_default():
+    from app.models import NarrationSession
+
+    assert NarrationSession(text="", voice_id=1).lip_sync_mode == "fast"
 
 
 def test_introductory_comma_clause_waits_for_its_continuation():

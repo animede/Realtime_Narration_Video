@@ -55,6 +55,7 @@ class NarrationSession(BaseModel):
     voice_id: int
     video_profile: str = "20fps-hq"
     character_mode: str = "standard"
+    lip_sync_mode: str = "fast"
     target_chunk_seconds: float = 5.0
     startup_buffer_chunks: int = 1
     chunks: list[Chunk] = Field(default_factory=list)

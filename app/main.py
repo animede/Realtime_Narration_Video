@@ -56,6 +56,7 @@ async def create_session(
     voice_id: int = Form(settings.tts_speaker_id),
     video_profile: str = Form("20fps-hq"),
     character_mode: str = Form("standard"),
+    lip_sync_mode: str = Form("fast"),
     target_chunk_seconds: float = Form(settings.target_chunk_seconds),
     startup_buffer_chunks: int = Form(settings.startup_buffer_chunks),
     character: UploadFile = File(...),
@@ -71,9 +72,11 @@ async def create_session(
         raise HTTPException(400, "動画プロファイルが不正です")
     if character_mode not in {"standard", "photoreal"}:
         raise HTTPException(400, "キャラクター種別が不正です")
+    if lip_sync_mode not in {"fast", "strong"}:
+        raise HTTPException(400, "リップシンク設定が不正です")
     session = NarrationSession(
         text=cleaned, concept=concept.strip(), voice_id=voice_id, video_profile=video_profile,
-        character_mode=character_mode,
+        character_mode=character_mode, lip_sync_mode=lip_sync_mode,
         target_chunk_seconds=target_chunk_seconds,
         startup_buffer_chunks=startup_buffer_chunks,
     )
