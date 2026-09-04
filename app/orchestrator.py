@@ -59,29 +59,32 @@ class Orchestrator:
                 await load_task
             else:
                 speech_task = asyncio.create_task(synthesize_sentence(
-                    self.settings.tts_url, session.voice_id, "あー。"
+                    self.settings.tts_url, session.voice_id, "あー、あー、あー、あー。"
                 ))
-                _, (wav, speech_duration) = await asyncio.gather(load_task, speech_task)
+                _, (wav, _) = await asyncio.gather(load_task, speech_task)
                 folder = self.settings.data_dir / session.id
                 condition = folder / "character-preparation.wav"
                 condition.write_bytes(pad_wav(wav, 5.1))
                 image_id, audio_id = await asyncio.gather(
                     gateway.upload(character), gateway.upload(condition)
                 )
-                preparation_profile = generation_profile(session.video_profile, True)
+                # The speaking anchor is reused by every clip, including full-size
+                # follow-ups. Generate it at the selected resolution; only the first
+                # conversational clip uses the lower-latency startup profile.
+                preparation_profile = session.video_profile
                 _, _, _, preparation_frames = VIDEO_PROFILES[preparation_profile]
                 result = await gateway.generate(
                     image_id, audio_id,
-                    "Medium close-up of the same character clearly saying a sustained vowel. "
-                    "The lips and jaw open visibly while identity and camera remain stable.",
-                    1004, preparation_profile, 4, preparation_frames, 1.3,
+                    "Medium close-up of the same character repeatedly articulating sustained open vowel "
+                    "sounds. The mouth opens wide and visibly for every vowel; lips, teeth, and jaw are "
+                    "clearly visible. Stable identity and camera.",
+                    1004, preparation_profile, 8, preparation_frames, 1.3,
                 )
                 raw = folder / "character-preparation.mp4"
                 await gateway.download(result["result"]["video_url"], raw)
-                # LTX's visible articulation trails the very short source vowel. In
-                # the five-second preparation clip the mouth is stably open around
-                # the midpoint, while the opening frames still match the closed input.
-                await self._frame_at(raw, folder / "character-speaking.png", 2.5)
+                # Repeated vowels create a stable open-mouth interval at full
+                # resolution. Select it before the padded silent tail closes the lips.
+                await self._frame_at(raw, folder / "character-speaking.png", 0.75)
                 raw.unlink(missing_ok=True)
             session.character_prepared = True
             session.character_preparation_seconds = round(time() - started_at, 3)

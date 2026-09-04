@@ -29,10 +29,11 @@ def test_photoreal_videos_use_effective_video_modality_scale():
 
 def test_photoreal_character_preparation_creates_speaking_anchor():
     source = Path("app/orchestrator.py").read_text(encoding="utf-8")
-    assert 'self.settings.tts_url, session.voice_id, "あー。"' in source
+    assert 'self.settings.tts_url, session.voice_id, "あー、あー、あー、あー。"' in source
     assert 'folder / "character-speaking.png"' in source
-    assert 'preparation_profile = generation_profile(session.video_profile, True)' in source
-    assert '1004, preparation_profile, 4, preparation_frames, 1.3' in source
+    assert 'preparation_profile = session.video_profile' in source
+    assert '1004, preparation_profile, 8, preparation_frames, 1.3' in source
+    assert 'folder / "character-speaking.png", 0.75' in source
 
 
 def test_fast_lip_sync_mode_is_default():
