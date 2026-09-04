@@ -68,3 +68,4 @@ def test_video_prompt_contains_exact_spoken_text_and_articulation():
     assert 'says exactly: "おはようございます。"' in prompt
     assert "every spoken syllable" in prompt
     assert "mouth must not remain closed" in prompt
+    assert "return the lips to a relaxed closed position" in prompt

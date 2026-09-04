@@ -331,6 +331,13 @@ function processSession(session) {
     chatForm.querySelector("button").disabled = false;
     narrationText.disabled = false;
   }
+  restoreCharacterAfterTurn(session);
+}
+
+function restoreCharacterAfterTurn(session) {
+  if (session.status !== "completed" || playingIndex !== null || nextIndex < session.chunks.length) return;
+  stageCharacter.hidden = false;
+  stageCharacter.classList.add("visible");
 }
 
 function advanceAfterSpeech(chunks) {
@@ -390,7 +397,10 @@ players.forEach(player => player.addEventListener("ended", () => {
   lastEndedAt = performance.now();
   nextIndex += 1;
   playingIndex = null;
-  if (latestSession) playNext(latestSession.chunks);
+  if (latestSession) {
+    playNext(latestSession.chunks);
+    restoreCharacterAfterTurn(latestSession);
+  }
 }));
 
 players.forEach(player => player.addEventListener("timeupdate", () => {

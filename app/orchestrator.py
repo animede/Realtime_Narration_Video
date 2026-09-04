@@ -319,7 +319,9 @@ class Orchestrator:
             f'The character says exactly: "{spoken_text}". '
             "Clearly and continuously articulate every spoken syllable, with visible rhythmic mouth opening "
             "and closing synchronized to the supplied speech audio. The mouth must not remain closed while "
-            "speaking. Medium close-up of the same character, front-facing or three-quarter view. The full "
+            "speaking. After the supplied speech ends, stop articulating and naturally return the lips to a "
+            "relaxed closed position for the remaining silence. Medium close-up of the same character, "
+            "front-facing or three-quarter view. The full "
             "face, lips, teeth, and jaw remain unobstructed and clearly visible. Preserve identity, with subtle "
             f"blinking and breathing, and a stable camera. Scene direction: {setting}."
         )
