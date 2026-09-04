@@ -11,6 +11,7 @@ def test_profiles_match_realtime_video_constraints():
     assert VIDEO_PROFILES["20fps-hq"] == (576, 320, 20, 97)
     assert VIDEO_PROFILES["16fps-portrait"] == (384, 640, 16, 81)
     assert VIDEO_PROFILES["24fps-portrait"] == (288, 512, 24, 121)
+    assert VIDEO_PROFILES["16fps-portrait-3x4-fast"] == (288, 384, 16, 81)
     assert all(width % 32 == 0 and height % 32 == 0 for width, height, _, _ in VIDEO_PROFILES.values())
 
 
