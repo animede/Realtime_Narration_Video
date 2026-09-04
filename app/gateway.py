@@ -28,7 +28,9 @@ VIDEO_PROFILES = {
 
 
 def generation_profile(selected_profile: str, first_video_of_turn: bool) -> str:
-    """Keep the selected resolution for every generated clip."""
+    """Use the measured low-latency variant for the first 3:4 portrait clip."""
+    if first_video_of_turn and selected_profile == "16fps-portrait-3x4":
+        return "16fps-portrait-3x4-fast"
     return selected_profile
 
 

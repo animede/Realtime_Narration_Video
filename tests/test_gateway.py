@@ -33,8 +33,8 @@ def test_profiles_produce_full_playback_window():
     assert profile_duration("20fps-hq") == 4.8
 
 
-def test_generation_keeps_selected_profile():
-    assert generation_profile("16fps-portrait-3x4", True) == "16fps-portrait-3x4"
+def test_first_portrait_generation_uses_low_latency_profile():
+    assert generation_profile("16fps-portrait-3x4", True) == "16fps-portrait-3x4-fast"
     assert generation_profile("16fps-portrait-3x4", False) == "16fps-portrait-3x4"
     assert generation_profile("20fps-hq", True) == "20fps-hq"
 
