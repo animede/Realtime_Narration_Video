@@ -4,6 +4,12 @@
 
 開発中に行った速度・解像度・steps・実写リップシンクの比較は、[改良の経緯と測定記録](docs/development-notes.md)にまとめています。構成、API、パラメータ、運用方法は[テクニカルガイド](docs/technical-guide.md)を参照してください。
 
+## 動作サンプル
+
+[![Realtime Narration Videoの動作サンプル](docs/assets/demo-preview.jpg)](docs/assets/demo.mp4)
+
+画像をクリックすると、LLMの応答をTTSと動画へ順次変換して再生する約57秒のデモ動画を開きます。直接開く場合は[MP4版（1.8MB）](docs/assets/demo.mp4)をご覧ください。
+
 ## 現在のMVP
 
 - 文・節単位の分割と文単位TTS
