@@ -230,11 +230,29 @@ function processSession(session) {
     playNext(session.chunks);
   }
   preloadFollowing(session.chunks);
+  advanceAfterSpeech(session.chunks);
   if (["completed", "failed", "cancelled"].includes(session.status)) {
     form.querySelector("button").disabled = false;
     chatForm.querySelector("button").disabled = false;
     narrationText.disabled = false;
   }
+}
+
+function advanceAfterSpeech(chunks) {
+  if (playingIndex === null) return;
+  const current = chunks.find(item => item.index === playingIndex);
+  const following = chunks.find(item => item.index === playingIndex + 1 && item.status === "playable");
+  const player = players[activePlayer];
+  if (!current?.speech_duration || !following || player.currentTime < current.speech_duration) return;
+
+  // LTX clips have a fixed duration and short utterances are padded with silence.
+  // Once the following clip is ready, skip that padding instead of waiting for
+  // the current five-second video to end.
+  player.pause();
+  lastEndedAt = performance.now();
+  nextIndex = playingIndex + 1;
+  playingIndex = null;
+  playNext(chunks);
 }
 
 function loadPlayer(player, chunk) {
@@ -278,6 +296,12 @@ players.forEach(player => player.addEventListener("ended", () => {
   nextIndex += 1;
   playingIndex = null;
   if (latestSession) playNext(latestSession.chunks);
+}));
+
+players.forEach(player => player.addEventListener("timeupdate", () => {
+  if (player === players[activePlayer] && latestSession) {
+    advanceAfterSpeech(latestSession.chunks);
+  }
 }));
 
 players.forEach(player => player.addEventListener("playing", () => {
