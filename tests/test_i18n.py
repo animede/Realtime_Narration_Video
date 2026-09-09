@@ -29,5 +29,11 @@ def test_browser_contains_bilingual_controls_and_persists_language():
     javascript = Path("app/static/app.js").read_text(encoding="utf-8")
     assert 'id="ui-language"' in html
     assert 'name="conversation_language"' in html
+    assert 'name="action_level"' in html
+    assert "アクション量" in javascript
+    assert "Action level" in javascript
+    assert 'class="live-setting"' in html
+    assert 'class="setup-setting"' in html
+    assert '/settings`' in javascript
     assert 'localStorage.setItem("uiLanguage"' in javascript
     assert "Display language" in javascript

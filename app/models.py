@@ -52,10 +52,11 @@ class NarrationSession(BaseModel):
     status: SessionStatus = SessionStatus.QUEUED
     text: str
     concept: str = ""
+    action_level: str = "low"
     voice_id: int
     video_profile: str = "20fps-hq"
     character_mode: str = "standard"
-    lip_sync_mode: str = "fast"
+    lip_sync_mode: str = "natural"
     video_seed: int = 1004
     ui_language: str = "ja"
     conversation_language: str = "auto"
@@ -65,6 +66,8 @@ class NarrationSession(BaseModel):
     messages: list[ChatMessage] = Field(default_factory=list)
     assistant_text: str = ""
     character_prepared: bool = False
+    idle_video_url: str | None = None
+    idle_video_ready_at: float | None = None
     character_preparation_seconds: float | None = None
     llm_started_at: float | None = None
     llm_first_delta_at: float | None = None

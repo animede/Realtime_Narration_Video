@@ -10,7 +10,7 @@ from .gateway import VIDEO_PROFILES, GatewayClient, generation_profile, profile_
 from .llm import StreamingChatClient, pop_speakable
 from .models import ChatMessage, Chunk, NarrationSession, SessionStatus
 from .muxer import mux_original_audio
-from .tts import join_wavs, pad_wav, synthesize_sentence
+from .tts import join_wavs, pad_wav, silent_wav, synthesize_sentence
 
 
 SYSTEM_PROMPT_JA = (
@@ -27,6 +27,21 @@ SYSTEM_PROMPT_AUTO = (
     "You are a helpful voice assistant. Reply in the same language as the user's latest message, using natural, "
     "concise spoken language. Avoid Markdown, list markers, and reading URLs aloud. Keep each sentence short."
 )
+
+ACTION_DIRECTIONS = {
+    "low": (
+        "Keep the head and body nearly still. Allow only tiny natural blinking and breathing. "
+        "No hand gestures, nodding, swaying, broad poses, or exaggerated facial expressions."
+    ),
+    "medium": (
+        "Use restrained, natural head and upper-body movement with occasional small gestures. "
+        "Avoid sudden, broad, or exaggerated motion."
+    ),
+    "high": (
+        "Use lively, expressive head and upper-body movement with occasional clear gestures, while keeping "
+        "the face and mouth visible and avoiding abrupt or extreme motion."
+    ),
+}
 
 
 def system_prompt(language: str) -> str:
@@ -67,7 +82,7 @@ class Orchestrator:
         temporary.replace(folder / "session.json")
 
     async def prepare_character(self, session: NarrationSession, character: Path) -> None:
-        """Preload LTX and create an open-mouth reference for photoreal characters."""
+        """Preload LTX and create idle video plus the photoreal speaking reference."""
         started_at = time()
         session.status = SessionStatus.PREPARING
         session.error = None
@@ -76,15 +91,53 @@ class Orchestrator:
                                 self.settings.poll_interval)
         try:
             load_task = asyncio.create_task(gateway.load_backend())
-            if session.character_mode != "photoreal":
-                await load_task
-            else:
+            speech_task = None
+            if session.character_mode == "photoreal":
                 anchor_text = "Ah. Ah. Ah. Ah." if session.conversation_language == "en" else "あー、あー、あー、あー。"
                 speech_task = asyncio.create_task(synthesize_sentence(
                     self.settings.tts_url, session.voice_id, anchor_text
                 ))
-                _, (wav, _) = await asyncio.gather(load_task, speech_task)
-                folder = self.settings.data_dir / session.id
+            await load_task
+            folder = self.settings.data_dir / session.id
+            preparation_profile = session.video_profile
+            _, _, _, preparation_frames = VIDEO_PROFILES[preparation_profile]
+            # Generate roughly half a clip and append its reverse. This keeps the
+            # displayed loop short while guaranteeing that its last pose returns
+            # to the first pose instead of jumping at the browser loop boundary.
+            idle_frames = 8 * max(1, round((preparation_frames - 1) / 16)) + 1
+
+            idle_condition = folder / "character-idle.wav"
+            idle_seconds = (idle_frames - 1) / VIDEO_PROFILES[preparation_profile][2]
+            idle_condition.write_bytes(silent_wav(idle_seconds + 0.2))
+            idle_image_id, idle_audio_id = await asyncio.gather(
+                gateway.upload(character), gateway.upload(idle_condition)
+            )
+            idle_result = await gateway.generate(
+                idle_image_id, idle_audio_id,
+                "Seamless idle loop of the same character waiting calmly in the same scene. The lips remain "
+                "naturally closed with no speaking or mouth articulation. Only subtle breathing and occasional "
+                "gentle blinking; the head and body remain nearly still. No gestures, nodding, swaying, camera "
+                "movement, scene change, or facial-expression change. Keep the exact same calm expression "
+                "throughout. Preserve exact identity and composition. "
+                "Finish in the same neutral pose as the first frame for a smooth loop.",
+                session.video_seed, preparation_profile, 8, idle_frames,
+            )
+            idle_raw = folder / "character-idle-raw.mp4"
+            await gateway.download(idle_result["result"]["video_url"], idle_raw)
+            # The silent idle generation is a better closed-mouth source than the
+            # uploaded still when the latter already has parted lips or a smile.
+            await self._frame_at(
+                idle_raw, folder / "character-neutral.png", max(0.1, idle_seconds - 0.15)
+            )
+            idle_video = folder / "character-idle.mp4"
+            await self._make_ping_pong_loop(idle_raw, idle_video)
+            idle_raw.unlink(missing_ok=True)
+            session.idle_video_url = f"/api/sessions/{session.id}/idle-video"
+            session.idle_video_ready_at = time()
+            self.save(session)
+
+            if speech_task is not None:
+                wav, _ = await speech_task
                 condition = folder / "character-preparation.wav"
                 condition.write_bytes(pad_wav(wav, 5.1))
                 image_id, audio_id = await asyncio.gather(
@@ -93,8 +146,6 @@ class Orchestrator:
                 # The speaking anchor is reused by every clip, including full-size
                 # follow-ups. Generate it at the selected resolution; only the first
                 # conversational clip uses the lower-latency startup profile.
-                preparation_profile = session.video_profile
-                _, _, _, preparation_frames = VIDEO_PROFILES[preparation_profile]
                 result = await gateway.generate(
                     image_id, audio_id,
                     "Medium close-up of the same character repeatedly articulating sustained open vowel "
@@ -105,7 +156,9 @@ class Orchestrator:
                 raw = folder / "character-preparation.mp4"
                 await gateway.download(result["result"]["video_url"], raw)
                 # Repeated vowels create a stable open-mouth interval at full
-                # resolution. Select it before the padded silent tail closes the lips.
+                # resolution. Keep both a mild early articulation frame and the
+                # wide-open fallback so the UI can switch modes without re-preparing.
+                await self._frame_at(raw, folder / "character-speaking-balanced.png", 0.12)
                 await self._frame_at(raw, folder / "character-speaking.png", 0.75)
                 raw.unlink(missing_ok=True)
             session.character_prepared = True
@@ -192,11 +245,27 @@ class Orchestrator:
             await video_queue.put(None)
 
         async def generate_video() -> None:
-            speaking_reference = folder / "character-speaking.png"
-            reference = speaking_reference if session.character_mode == "photoreal" and speaking_reference.is_file() else character
-            character_id = await gateway.upload(reference)
             first_video_of_turn = True
-            chain_path = reference
+            chain_path = character
+            uploaded_images: dict[Path, str] = {}
+
+            async def image_asset(path: Path) -> str:
+                if path not in uploaded_images:
+                    uploaded_images[path] = await gateway.upload(path)
+                return uploaded_images[path]
+
+            def photoreal_reference() -> Path:
+                candidates = {
+                    "natural": folder / "character-neutral.png",
+                    "balanced": folder / "character-speaking-balanced.png",
+                    "strong": folder / "character-speaking.png",
+                    # Backward compatibility for sessions created before the
+                    # natural/balanced/strong modes were introduced.
+                    "fast": folder / "character-speaking.png",
+                }
+                selected = candidates.get(session.lip_sync_mode, candidates["natural"])
+                return selected if selected.is_file() else character
+
             while True:
                 chunk = await video_queue.get()
                 if chunk is None:
@@ -207,11 +276,8 @@ class Orchestrator:
                 chunk.video_started_at = time()
                 session.status = SessionStatus.GENERATING
                 self.save(session)
-                image_id = (
-                    character_id
-                    if session.character_mode == "photoreal" or chain_path == reference
-                    else await gateway.upload(chain_path)
-                )
+                reference = photoreal_reference() if session.character_mode == "photoreal" else chain_path
+                image_id = await image_asset(reference)
                 audio_path = folder / f"chunk-{chunk.index:03}.wav"
                 condition_audio = folder / f"chunk-{chunk.index:03}-condition.wav"
                 audio_id = await gateway.upload(condition_audio)
@@ -222,7 +288,8 @@ class Orchestrator:
                 actual_seed = session.video_seed if session.character_mode == "photoreal" else session.video_seed + chunk.index
                 actual_modality_scale = (
                     1.3
-                    if session.character_mode == "photoreal" and session.lip_sync_mode == "strong"
+                    if session.character_mode == "photoreal"
+                    and session.lip_sync_mode in {"natural", "balanced", "strong"}
                     else None
                 )
                 _, _, _, profile_frames = VIDEO_PROFILES[actual_profile]
@@ -234,7 +301,9 @@ class Orchestrator:
                 chunk.audio_modality_scale = None
                 chunk.modality_scale = actual_modality_scale
                 result = await gateway.generate(
-                    image_id, audio_id, self._prompt(chunk.text, session.concept, session.character_mode),
+                    image_id, audio_id, self._prompt(
+                        chunk.text, session.concept, session.character_mode, session.action_level
+                    ),
                     actual_seed, actual_profile, actual_steps, actual_frames,
                     actual_modality_scale,
                 )
@@ -335,14 +404,21 @@ class Orchestrator:
             self.save(session)
 
     @staticmethod
-    def _prompt(text: str, concept: str, character_mode: str = "photoreal") -> str:
+    def _prompt(text: str, concept: str, character_mode: str = "photoreal",
+                action_level: str = "low") -> str:
         setting = concept.strip() or "a calm, clean studio background"
         spoken_text = " ".join(text.split())[:300]
+        action_direction = ACTION_DIRECTIONS.get(action_level, ACTION_DIRECTIONS["low"])
+        mouth_rest = (
+            "Mouth movement is only for articulating the narration; do not hold an open-mouth expression. "
+            "During silent intervals, the lips rest naturally together. "
+        )
         if character_mode == "standard":
             return (
                 "Medium close-up of the same character speaking naturally, front-facing or three-quarter view. "
                 "The full face and unobstructed mouth stay clearly visible. Natural lip and jaw movement follows "
-                "the supplied narration audio; subtle blinking and breathing, stable camera, consistent identity. "
+                f"the supplied narration audio. {mouth_rest}{action_direction} "
+                "Stable camera and consistent identity. "
                 f'Scene direction: {setting}. The character says: "{spoken_text}".'
             )
         return (
@@ -350,10 +426,11 @@ class Orchestrator:
             "Clearly and continuously articulate every spoken syllable, with visible rhythmic mouth opening "
             "and closing synchronized to the supplied speech audio. The mouth must not remain closed while "
             "speaking. After the supplied speech ends, stop articulating and naturally return the lips to a "
-            "relaxed closed position for the remaining silence. Medium close-up of the same character, "
+            f"relaxed closed position for the remaining silence. {mouth_rest}"
+            "Medium close-up of the same character, "
             "front-facing or three-quarter view. The full "
             "face, lips, teeth, and jaw remain unobstructed and clearly visible. Preserve identity, with subtle "
-            f"blinking and breathing, and a stable camera. Scene direction: {setting}."
+            f"blinking and breathing, and a stable camera. {action_direction} Scene direction: {setting}."
         )
 
     @staticmethod
@@ -375,3 +452,19 @@ class Orchestrator:
         _, stderr = await process.communicate()
         if process.returncode or not target.is_file() or target.stat().st_size == 0:
             raise RuntimeError(f"発話用フレーム抽出に失敗しました: {stderr.decode()[-500:]}")
+
+    @staticmethod
+    async def _make_ping_pong_loop(video: Path, target: Path) -> None:
+        process = await asyncio.create_subprocess_exec(
+            "ffmpeg", "-y", "-v", "error", "-i", str(video),
+            "-filter_complex",
+            "[0:v]split[forward][backward];"
+            "[forward]setpts=PTS-STARTPTS[f];"
+            "[backward]reverse,setpts=PTS-STARTPTS[r];"
+            "[f][r]concat=n=2:v=1:a=0,format=yuv420p[out]",
+            "-map", "[out]", "-an", "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
+            "-movflags", "+faststart", str(target), stderr=asyncio.subprocess.PIPE,
+        )
+        _, stderr = await process.communicate()
+        if process.returncode or not target.is_file() or target.stat().st_size == 0:
+            raise RuntimeError(f"待機ループ動画の加工に失敗しました: {stderr.decode()[-500:]}")

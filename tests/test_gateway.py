@@ -2,6 +2,7 @@ from app.gateway import STARTUP_PROFILES, GatewayClient, VIDEO_PROFILES, generat
 from app.config import Settings
 from app.models import NarrationSession
 from app.orchestrator import Orchestrator
+from app.main import SessionSettingsUpdate, orchestrator, update_session_settings
 
 import asyncio
 from pathlib import Path
@@ -69,3 +70,42 @@ def test_video_prompt_contains_exact_spoken_text_and_articulation():
     assert "every spoken syllable" in prompt
     assert "mouth must not remain closed" in prompt
     assert "return the lips to a relaxed closed position" in prompt
+
+
+def test_action_level_changes_video_prompt_and_low_is_stable_default():
+    session = NarrationSession(text="", voice_id=1)
+    assert session.action_level == "low"
+
+    low = Orchestrator._prompt("こんにちは。", "スタジオ", action_level="low")
+    medium = Orchestrator._prompt("こんにちは。", "スタジオ", action_level="medium")
+    high = Orchestrator._prompt("こんにちは。", "スタジオ", action_level="high")
+
+    assert "No hand gestures" in low
+    assert "occasional small gestures" in medium
+    assert "lively, expressive" in high
+    assert "do not hold an open-mouth expression" in low
+    assert len({low, medium, high}) == 3
+
+
+def test_live_settings_update_without_repreparing_character(monkeypatch):
+    session = NarrationSession(text="", voice_id=1)
+    orchestrator.sessions[session.id] = session
+    saves = []
+    monkeypatch.setattr(orchestrator, "save", lambda item: saves.append(item.id))
+    try:
+        result = asyncio.run(update_session_settings(
+            session.id,
+            SessionSettingsUpdate(
+                concept="  静かな部屋  ", action_level="high", video_seed=42,
+                target_chunk_seconds=4.2,
+            ),
+        ))
+    finally:
+        orchestrator.sessions.pop(session.id, None)
+
+    assert result is session
+    assert session.concept == "静かな部屋"
+    assert session.action_level == "high"
+    assert session.video_seed == 42
+    assert session.target_chunk_seconds == 4.2
+    assert saves == [session.id]

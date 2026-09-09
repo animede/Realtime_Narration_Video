@@ -70,3 +70,14 @@ def pad_wav(item: bytes, minimum_seconds: float = 5.1) -> bytes:
         target.writeframes(frames)
         target.writeframes(b"\0" * missing * channels * width)
     return output.getvalue()
+
+
+def silent_wav(seconds: float = 5.1, rate: int = 24_000) -> bytes:
+    """Create a mono PCM silence track suitable for idle A2V conditioning."""
+    output = io.BytesIO()
+    with wave.open(output, "wb") as target:
+        target.setnchannels(1)
+        target.setsampwidth(2)
+        target.setframerate(rate)
+        target.writeframes(b"\0" * round(seconds * rate) * 2)
+    return output.getvalue()

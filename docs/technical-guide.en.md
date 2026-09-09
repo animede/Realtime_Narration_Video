@@ -55,7 +55,7 @@ Default endpoints use localhost. Keep credentials and deployment addresses only 
 |---|---|
 | `character` | PNG, JPEG, or WebP |
 | `character_mode` | `standard` or `photoreal` |
-| `lip_sync_mode` | `fast` or `strong` |
+| `lip_sync_mode` | `natural`, `balanced`, or `strong` |
 | `ui_language` | `ja` or `en`; controls display text |
 | `conversation_language` | `auto`, `ja`, or `en`; controls LLM output and segmentation |
 | `video_profile` | Public profile selected in the UI |
@@ -84,12 +84,13 @@ Registration therefore performs the following preparation:
 2. Pad the conditioning WAV with silence to 5.1 seconds.
 3. Generate a preparation video at the selected profile's native resolution.
 4. Prefer reference quality and successful mouth opening by using eight steps, the UI-selected seed (default 1004), and `modality_scale=1.3`.
-5. Extract the reliably open-mouth frame at 0.75 seconds with FFmpeg.
-6. Save it as `character-speaking.png` in the session.
+5. Extract a closed-mouth `character-neutral.png` frame from the idle generation.
+6. Extract mild and wide articulation frames at 0.12 and 0.75 seconds.
+7. Save them as `character-speaking-balanced.png` and `character-speaking.png`.
 
 Place FFmpeg's `-ss` after the input. Fast seeking before the input can return to the first frame for short MP4 files with sparse keyframes.
 
-The waiting screen shows the original uploaded image. The speaking anchor is only an internal LTX input. Because it is reused by full-resolution follow-up clips, it is not generated at the reduced startup resolution. This policy applies to all 11 public profiles: anchor preparation uses the selected profile; only the first conversational clip uses its startup profile.
+The waiting screen shows a short ping-pong idle loop generated during setup. Speaking anchors are only internal LTX inputs. Because they are reused by full-resolution follow-up clips, they are not generated at the reduced startup resolution. This policy applies to all 11 public profiles: anchor preparation uses the selected profile; only the first conversational clip uses its startup profile.
 
 In a 384×512 test, the full-resolution anchor improved facial, mouth, and hair detail over a low-resolution anchor while retaining mouth motion and an approximately 2.6-second first response.
 
@@ -178,21 +179,22 @@ LTX spatial dimensions must be at least 256 and divisible by 32. Frame counts mu
 | Setting | Reference | Seed | Conversation scale | Intended use |
 |---|---|---:|---|---|
 | Standard | Previous clip's final frame within a turn | 1000 + chunk index | None | Illustration/3D and visual continuity |
-| Photorealistic/Fast | `character-speaking.png` for every clip | UI-selected (default 1004) | None | Initial latency and continuous playback |
-| Photorealistic/Strong Lip Motion | `character-speaking.png` for every clip | UI-selected (default 1004) | 1.3 | Fallback when the mouth does not move |
+| Photorealistic/Natural | `character-neutral.png` for every clip | UI-selected (default 1004) | 1.3 | Prefer natural closure |
+| Photorealistic/Balanced | `character-speaking-balanced.png` for every clip | UI-selected (default 1004) | 1.3 | Mild opening with reliable motion |
+| Photorealistic/Strong | `character-speaking.png` for every clip | UI-selected (default 1004) | 1.3 | Last-resort articulation strength |
 
-The speaking anchor can leave the mouth slightly open during silence in photorealistic fast mode. This is a deliberate tradeoff against generating speech with a fully closed mouth.
+The legacy `fast` value remains accepted for saved-session compatibility and uses the wide anchor without conversation scale.
 
 ## 9. Client playback
 
 The browser alternates two video elements:
 
 - Preload the following MP4 during playback.
-- When `currentTime` reaches `speech_duration` and the next clip is `playable`, skip the remaining fixed-duration silence.
-- If the next clip is pending, continue the current clip and switch when its completion notification arrives.
+- When `currentTime` reaches `speech_duration`, always skip the remaining fixed-duration silence.
+- If the next clip is pending, show the closed-mouth idle loop until its completion notification arrives.
 - Load a newly playable clip into the hidden player.
 - Switch immediately on `ended` as a fallback.
-- Cover the previous turn with the original character image at the start of a new turn.
+- Cover the previous turn with the generated idle loop at the start of a new turn.
 - Display the measured player-switch time.
 
 If total follow-up generation remains under five seconds, no inter-video availability gap should occur in principle.

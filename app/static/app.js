@@ -12,6 +12,7 @@ const characterDrop = document.querySelector("#character-drop");
 const characterInput = document.querySelector("#character-input");
 const characterPreview = document.querySelector("#character-preview");
 const stageCharacter = document.querySelector("#stage-character");
+const stageIdle = document.querySelector("#stage-idle");
 const textDrop = document.querySelector("#text-drop");
 const textFileInput = document.querySelector("#text-file");
 const narrationSource = document.querySelector("#narration-source");
@@ -20,22 +21,25 @@ const narrationText = document.querySelector("#narration-text");
 const textFileName = document.querySelector("#text-file-name");
 const uiLanguageSelect = document.querySelector("#ui-language");
 const uiLanguageForm = document.querySelector("#ui-language-form");
+const inputPanel = document.querySelector(".input-panel");
 const messages = {
   ja: {
     uiLanguage: "表示言語", tagline: "文章を約5秒ずつ音声化し、生成できた映像から順番に再生します。",
     characterImage: "キャラクター画像", characterPreview: "キャラクタープレビュー", dropImage: "画像をドロップ",
     dropImageHint: "PNG・JPEG・WebP／クリックして選択", sceneDirection: "映像の方向性",
-    scenePlaceholder: "落ち着いたスタジオで説明する", characterType: "キャラクター種別",
+    scenePlaceholder: "落ち着いたスタジオで説明する", actionLevel: "アクション量",
+    actionLow: "少なめ（安定重視）", actionMedium: "標準", actionHigh: "多め（表現重視）", characterType: "キャラクター種別",
     characterStandard: "標準（イラスト・3D）", characterPhotoreal: "実写・口動作優先",
-    lipSetting: "実写の発話設定", lipFast: "高速（口開き画像を使用）",
-    lipStrong: "口動作優先（会話もmodality 1.3）", videoProfile: "動画プロファイル",
+    lipSetting: "実写の発話設定", lipNatural: "自然（閉口優先）",
+    lipBalanced: "バランス（軽い開口）", lipStrong: "強い口動作（大きい開口）", videoProfile: "動画プロファイル",
     profile16: "16fps・解像度優先", profile20: "20fps・バランス", profile24: "24fps・動き優先",
     profilePeople: "640×384（5:3 人物向け）", profileStable: "576×384（3:2 安定）",
     profilePortrait34: "384×512（3:4 縦型）", profilePortrait35: "384×640（3:5 縦型・実験）",
     profilePortrait916: "288×512（9:16 縦型）",
     conversationLanguage: "会話言語", languageAuto: "自動（入力に合わせる）", languageJapanese: "日本語",
-    languageEnglish: "英語", speakerId: "話者ID", videoSeed: "動画seed", chunkSeconds: "チャンク秒数", preloadCount: "先読み数",
-    setCharacter: "キャラクターを設定", updateSettings: "設定を更新", configured: "設定済み",
+    languageEnglish: "英語", liveSettingHint: "緑枠：次の生成から即時反映", setupSettingHint: "黄枠：設定ボタンで反映",
+    speakerId: "話者ID", videoSeed: "動画seed", chunkSeconds: "チャンク秒数", preloadCount: "先読み数",
+    setCharacter: "キャラクターを設定", updateSettings: "設定を更新", configured: "設定済み", idleCharacter: "待機中のキャラクター",
     narrationLabel: "朗読させたい文章", narrationPlaceholder: "文章を入力・貼り付け、またはTXTファイルをドロップ",
     selectTextFile: "TXTを選択", narrate: "朗読", idle: "待機中", configuredCharacter: "設定したキャラクター",
     captionPlaceholder: "生成を開始すると、ここに読み上げ内容が表示されます。",
@@ -54,17 +58,19 @@ const messages = {
     uiLanguage: "Display language", tagline: "Speech is generated in roughly five-second chunks and completed videos play in order.",
     characterImage: "Character image", characterPreview: "Character preview", dropImage: "Drop an image",
     dropImageHint: "PNG, JPEG, or WebP / click to select", sceneDirection: "Scene direction",
-    scenePlaceholder: "Explain in a calm studio", characterType: "Character type",
+    scenePlaceholder: "Explain in a calm studio", actionLevel: "Action level",
+    actionLow: "Low (prioritize stability)", actionMedium: "Medium", actionHigh: "High (more expressive)", characterType: "Character type",
     characterStandard: "Standard (illustration / 3D)", characterPhotoreal: "Photorealistic / lip motion",
-    lipSetting: "Photorealistic speech", lipFast: "Fast (use open-mouth anchor)",
-    lipStrong: "Strong lip motion (modality 1.3 in chat)", videoProfile: "Video profile",
+    lipSetting: "Photorealistic speech", lipNatural: "Natural (prefer closed mouth)",
+    lipBalanced: "Balanced (slightly open)", lipStrong: "Strong lip motion (wide open)", videoProfile: "Video profile",
     profile16: "16 fps / resolution", profile20: "20 fps / balanced", profile24: "24 fps / motion",
     profilePeople: "640×384 (5:3 / people)", profileStable: "576×384 (3:2 / stable)",
     profilePortrait34: "384×512 (3:4 portrait)", profilePortrait35: "384×640 (3:5 portrait / experimental)",
     profilePortrait916: "288×512 (9:16 portrait)",
     conversationLanguage: "Conversation language", languageAuto: "Auto (match input)", languageJapanese: "Japanese",
-    languageEnglish: "English", speakerId: "Speaker ID", videoSeed: "Video seed", chunkSeconds: "Chunk seconds", preloadCount: "Startup buffer",
-    setCharacter: "Set character", updateSettings: "Update settings", configured: "Configured",
+    languageEnglish: "English", liveSettingHint: "Green: applies to the next generation", setupSettingHint: "Yellow: use the settings button",
+    speakerId: "Speaker ID", videoSeed: "Video seed", chunkSeconds: "Chunk seconds", preloadCount: "Startup buffer",
+    setCharacter: "Set character", updateSettings: "Update settings", configured: "Configured", idleCharacter: "Idle character",
     narrationLabel: "Text to narrate", narrationPlaceholder: "Type or paste text, or drop a TXT file",
     selectTextFile: "Choose TXT", narrate: "Narrate", idle: "Idle", configuredCharacter: "Configured character",
     captionPlaceholder: "Spoken text will appear here after generation starts.",
@@ -101,6 +107,9 @@ function applyLanguage() {
   document.querySelectorAll("[data-i18n-alt]").forEach(element => {
     element.alt = t(element.dataset.i18nAlt);
   });
+  document.querySelectorAll("[data-i18n-aria-label]").forEach(element => {
+    element.setAttribute("aria-label", t(element.dataset.i18nAriaLabel));
+  });
   document.querySelectorAll("[data-i18n-label]").forEach(element => {
     element.label = t(element.dataset.i18nLabel);
   });
@@ -127,6 +136,12 @@ let eventSource = null;
 let lastEndedAt = null;
 let switchGapMs = null;
 let settingsDirty = false;
+let liveSettingsPromise = Promise.resolve();
+let liveSettingsRevision = 0;
+const liveSettingNames = [
+  "concept", "action_level", "lip_sync_mode", "conversation_language", "voice_id",
+  "video_seed", "target_chunk_seconds", "startup_buffer_chunks"
+];
 const profileSizes = {
   "16fps-resolution": [640, 352], "16fps-5x3": [640, 384], "16fps-3x2": [576, 384],
   "16fps-4x3-resolution": [512, 384], "16fps-portrait-3x4": [384, 512],
@@ -183,6 +198,13 @@ characterInput.addEventListener("change", () => {
   characterPreview.src = previewUrl;
   characterPreview.hidden = false;
   stageCharacter.src = previewUrl;
+  stageIdle.pause();
+  stageIdle.classList.remove("visible");
+  stageIdle.removeAttribute("src");
+  stageIdle.load();
+  stageIdle.hidden = true;
+  stageCharacter.hidden = false;
+  stageCharacter.classList.add("visible");
   characterDrop.classList.add("has-file");
 });
 installDropZone(characterDrop, useCharacterFile);
@@ -214,14 +236,47 @@ installDropZone(textDrop, file => setDroppedFile(textFileInput, file));
 function markSettingsDirty() {
   const button = form.querySelector("button");
   const busy = latestSession && ["chatting", "synthesizing", "generating", "playable"].includes(latestSession.status);
-  if (busy) return;
   settingsDirty = true;
-  button.disabled = false;
+  button.disabled = Boolean(busy);
   button.textContent = sessionId ? t("updateSettings") : t("setCharacter");
 }
 
-form.querySelectorAll("input, select").forEach(control => {
+form.querySelectorAll(".setup-setting input, .setup-setting select").forEach(control => {
   control.addEventListener("change", markSettingsDirty);
+});
+
+function liveSettingsPayload() {
+  const data = new FormData(form);
+  return Object.fromEntries(liveSettingNames.map(name => [name, data.get(name)]));
+}
+
+function syncLiveSettings() {
+  if (!sessionId) return Promise.resolve();
+  const payload = liveSettingsPayload();
+  const revision = ++liveSettingsRevision;
+  inputPanel.classList.add("live-settings-saving");
+  inputPanel.classList.remove("live-settings-error");
+  liveSettingsPromise = liveSettingsPromise.catch(() => {}).then(async () => {
+    const response = await fetch(`/api/sessions/${sessionId}/settings`, {
+      method: "PATCH", headers: {"Content-Type": "application/json"}, body: JSON.stringify(payload)
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || `HTTP ${response.status}`);
+    if (revision === liveSettingsRevision) inputPanel.classList.remove("live-settings-saving");
+    return data;
+  }).catch(error => {
+    if (revision === liveSettingsRevision) {
+      inputPanel.classList.remove("live-settings-saving");
+      inputPanel.classList.add("live-settings-error");
+      statusLabel.textContent = t("error", error.message);
+    }
+    throw error;
+  });
+  return liveSettingsPromise;
+}
+
+form.querySelectorAll(".live-setting input, .live-setting select").forEach(control => {
+  control.addEventListener("change", () => { syncLiveSettings().catch(() => {}); });
 });
 
 form.addEventListener("submit", async (event) => {
@@ -234,13 +289,19 @@ form.addEventListener("submit", async (event) => {
     const data = await response.json();
     if (!response.ok) throw new Error(data.detail || `HTTP ${response.status}`);
     sessionId = data.id;
+    liveSettingsRevision = 0;
+    liveSettingsPromise = Promise.resolve();
+    inputPanel.classList.remove("live-settings-saving", "live-settings-error");
     settingsDirty = false;
     nextIndex = 0;
     playingIndex = null;
     playbackStarted = false;
     preloadedIndex = null;
-    stageCharacter.hidden = false;
-    stageCharacter.classList.add("visible");
+    if (data.idle_video_url) {
+      stageIdle.src = `${data.idle_video_url}?t=${data.idle_video_ready_at || Date.now()}`;
+      stageIdle.load();
+    }
+    showIdleStage();
     connectEvents();
     narrationText.disabled = false;
     chatForm.querySelector("button").disabled = false;
@@ -260,6 +321,7 @@ narrationButton.addEventListener("click", async () => {
   narrationButton.disabled = true;
   chatForm.querySelector("button").disabled = true;
   try {
+    await syncLiveSettings();
     const response = await fetch(`/api/sessions/${sessionId}/narrations`, {
       method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({text})
     });
@@ -269,8 +331,7 @@ narrationButton.addEventListener("click", async () => {
     playingIndex = null;
     playbackStarted = false;
     assistantLive.textContent = "";
-    stageCharacter.hidden = false;
-    stageCharacter.classList.add("visible");
+    showIdleStage();
     connectEvents();
   } catch (error) {
     statusLabel.textContent = t("sendError", error.message);
@@ -287,6 +348,7 @@ chatForm.addEventListener("submit", async (event) => {
   button.disabled = true;
   narrationButton.disabled = true;
   try {
+    await syncLiveSettings();
     const response = await fetch(`/api/sessions/${sessionId}/messages`, {
       method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({text})
     });
@@ -297,8 +359,7 @@ chatForm.addEventListener("submit", async (event) => {
     nextIndex = data.chunks.length;
     playingIndex = null;
     playbackStarted = false;
-    stageCharacter.hidden = false;
-    stageCharacter.classList.add("visible");
+    showIdleStage();
     connectEvents();
   } catch (error) {
     statusLabel.textContent = t("sendError", error.message);
@@ -363,30 +424,48 @@ function processSession(session) {
     narrationButton.disabled = false;
     narrationText.disabled = false;
   }
+  if (playingIndex === null && !readyChunks.length && session.character_prepared) showIdleStage();
   restoreCharacterAfterTurn(session);
+}
+
+function showIdleStage() {
+  const hasIdleVideo = Boolean(stageIdle.getAttribute("src"));
+  stageCharacter.hidden = hasIdleVideo;
+  stageCharacter.classList.toggle("visible", !hasIdleVideo);
+  stageIdle.hidden = !hasIdleVideo;
+  stageIdle.classList.toggle("visible", hasIdleVideo);
+  if (hasIdleVideo) stageIdle.play().catch(() => {});
+}
+
+function hideIdleStage() {
+  stageCharacter.classList.remove("visible");
+  stageIdle.classList.remove("visible");
 }
 
 function restoreCharacterAfterTurn(session) {
   if (session.status !== "completed" || playingIndex !== null || nextIndex < session.chunks.length) return;
-  stageCharacter.hidden = false;
-  stageCharacter.classList.add("visible");
+  showIdleStage();
 }
 
 function advanceAfterSpeech(chunks) {
   if (playingIndex === null) return;
   const current = chunks.find(item => item.index === playingIndex);
-  const following = chunks.find(item => item.index === playingIndex + 1 && item.status === "playable");
   const player = players[activePlayer];
-  if (!current?.speech_duration || !following || player.currentTime < current.speech_duration) return;
+  if (!current?.speech_duration || player.currentTime < current.speech_duration) return;
 
   // LTX clips have a fixed duration and short utterances are padded with silence.
-  // Once the following clip is ready, skip that padding instead of waiting for
-  // the current five-second video to end.
+  // Stop at the real audio boundary even when the next clip is not ready. The
+  // generated idle loop deterministically hides any open mouth in the silent tail.
   player.pause();
   lastEndedAt = performance.now();
   nextIndex = playingIndex + 1;
   playingIndex = null;
-  playNext(chunks);
+  const following = chunks.find(item => item.index === nextIndex && item.status === "playable");
+  if (following) {
+    playNext(chunks);
+  } else {
+    showIdleStage();
+  }
 }
 
 function loadPlayer(player, chunk) {
@@ -431,6 +510,7 @@ players.forEach(player => player.addEventListener("ended", () => {
   playingIndex = null;
   if (latestSession) {
     playNext(latestSession.chunks);
+    if (playingIndex === null) showIdleStage();
     restoreCharacterAfterTurn(latestSession);
   }
 }));
@@ -443,7 +523,7 @@ players.forEach(player => player.addEventListener("timeupdate", () => {
 
 players.forEach(player => player.addEventListener("playing", () => {
   if (player === players[activePlayer]) {
-    stageCharacter.classList.remove("visible");
+    hideIdleStage();
   }
   if (player === players[activePlayer] && lastEndedAt !== null) {
     switchGapMs = performance.now() - lastEndedAt;
@@ -451,9 +531,12 @@ players.forEach(player => player.addEventListener("playing", () => {
   }
 }));
 
-stageCharacter.addEventListener("transitionend", () => {
-  if (!stageCharacter.classList.contains("visible")) stageCharacter.hidden = true;
-});
+[stageCharacter, stageIdle].forEach(media => media.addEventListener("transitionend", () => {
+  if (!media.classList.contains("visible")) {
+    media.hidden = true;
+    if (media === stageIdle) media.pause();
+  }
+}));
 
 function renderChunks(chunks) {
   chunkList.replaceChildren(...chunks.map(chunk => {

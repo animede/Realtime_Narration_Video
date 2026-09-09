@@ -53,10 +53,11 @@ async def healthz():
 async def create_session(
     text: str = Form(""),
     concept: str = Form(""),
+    action_level: str = Form("low"),
     voice_id: int = Form(settings.tts_speaker_id),
     video_profile: str = Form("20fps-hq"),
     character_mode: str = Form("standard"),
-    lip_sync_mode: str = Form("fast"),
+    lip_sync_mode: str = Form("natural"),
     video_seed: int = Form(1004),
     ui_language: str = Form("ja"),
     conversation_language: str = Form("auto"),
@@ -75,7 +76,9 @@ async def create_session(
         raise HTTPException(400, "動画プロファイルが不正です")
     if character_mode not in {"standard", "photoreal"}:
         raise HTTPException(400, "キャラクター種別が不正です")
-    if lip_sync_mode not in {"fast", "strong"}:
+    if action_level not in {"low", "medium", "high"}:
+        raise HTTPException(400, "アクション量が不正です")
+    if lip_sync_mode not in {"natural", "balanced", "strong", "fast"}:
         raise HTTPException(400, "リップシンク設定が不正です")
     if not 0 <= video_seed <= 2_147_483_647:
         raise HTTPException(400, "seedは0～2147483647で指定してください")
@@ -84,7 +87,8 @@ async def create_session(
     if conversation_language not in {"auto", "ja", "en"}:
         raise HTTPException(400, "会話言語が不正です")
     session = NarrationSession(
-        text=cleaned, concept=concept.strip(), voice_id=voice_id, video_profile=video_profile,
+        text=cleaned, concept=concept.strip(), action_level=action_level,
+        voice_id=voice_id, video_profile=video_profile,
         character_mode=character_mode, lip_sync_mode=lip_sync_mode, video_seed=video_seed,
         ui_language=ui_language, conversation_language=conversation_language,
         target_chunk_seconds=target_chunk_seconds,
@@ -112,6 +116,41 @@ async def create_session(
 
 class ChatRequest(BaseModel):
     text: str
+
+
+class SessionSettingsUpdate(BaseModel):
+    concept: str | None = None
+    action_level: str | None = None
+    lip_sync_mode: str | None = None
+    conversation_language: str | None = None
+    voice_id: int | None = None
+    video_seed: int | None = None
+    target_chunk_seconds: float | None = None
+    startup_buffer_chunks: int | None = None
+
+
+@app.patch("/api/sessions/{session_id}/settings", response_model=NarrationSession)
+async def update_session_settings(session_id: str, request: SessionSettingsUpdate):
+    session = get_session_or_404(session_id)
+    values = request.model_dump(exclude_none=True)
+    if "action_level" in values and values["action_level"] not in {"low", "medium", "high"}:
+        raise HTTPException(400, "アクション量が不正です")
+    if "lip_sync_mode" in values and values["lip_sync_mode"] not in {"natural", "balanced", "strong", "fast"}:
+        raise HTTPException(400, "リップシンク設定が不正です")
+    if "conversation_language" in values and values["conversation_language"] not in {"auto", "ja", "en"}:
+        raise HTTPException(400, "会話言語が不正です")
+    if "video_seed" in values and not 0 <= values["video_seed"] <= 2_147_483_647:
+        raise HTTPException(400, "seedは0～2147483647で指定してください")
+    if "target_chunk_seconds" in values and not 3.5 <= values["target_chunk_seconds"] <= 5.0:
+        raise HTTPException(400, "チャンク目標時間は3.5～5.0秒にしてください")
+    if "startup_buffer_chunks" in values and not 1 <= values["startup_buffer_chunks"] <= 5:
+        raise HTTPException(400, "先読みチャンク数は1～5にしてください")
+    if "concept" in values:
+        values["concept"] = values["concept"].strip()
+    for name, value in values.items():
+        setattr(session, name, value)
+    orchestrator.save(session)
+    return session
 
 
 @app.post("/api/sessions/{session_id}/messages", response_model=NarrationSession, status_code=202)
@@ -206,6 +245,15 @@ async def cancel_session(session_id: str):
     session = get_session_or_404(session_id)
     session.cancelled = True
     orchestrator.save(session)
+
+
+@app.get("/api/sessions/{session_id}/idle-video")
+async def idle_video(session_id: str):
+    session = get_session_or_404(session_id)
+    path = settings.data_dir / session.id / "character-idle.mp4"
+    if not path.is_file():
+        raise HTTPException(404, "待機動画はまだ完成していません")
+    return FileResponse(path, media_type="video/mp4")
 
 
 def chunk_file(session_id: str, index: int, suffix: str) -> Path:
