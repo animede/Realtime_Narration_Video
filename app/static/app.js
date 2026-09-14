@@ -319,7 +319,7 @@ const profileSizes = {
   "16fps-5x3": [640, 384], "16fps-3x2": [576, 384],
   "16fps-640x480": [640, 480], "16fps-672x416": [672, 416], "16fps-704x416": [704, 416],
   "16fps-portrait-416x672": [416, 672], "16fps-portrait-416x704": [416, 704],
-  "16fps-portrait-480x640": [480, 640],
+  "16fps-portrait-480x640": [480, 640], "16fps-portrait-480x800": [480, 800], "16fps-800x480": [800, 480],
   "16fps-4x3-resolution": [512, 384], "16fps-portrait-3x4": [384, 512],
   "16fps-portrait": [384, 640], "20fps-hq": [576, 320],
   "20fps-4x3-balanced": [512, 384], "24fps-fast": [512, 288],
