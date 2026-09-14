@@ -9,7 +9,7 @@ from pathlib import Path
 
 
 def test_profiles_match_realtime_video_constraints():
-    assert VIDEO_PROFILES["20fps-hq"] == (576, 320, 20, 97)
+    assert VIDEO_PROFILES["20fps-4x3-balanced"] == (512, 384, 20, 97)
     assert VIDEO_PROFILES["16fps-portrait"] == (384, 640, 16, 81)
     assert VIDEO_PROFILES["24fps-portrait"] == (288, 512, 24, 121)
     assert VIDEO_PROFILES["16fps-portrait-3x4-fast"] == (288, 384, 16, 81)
@@ -31,7 +31,7 @@ def test_low_latency_default_starts_with_one_chunk():
 
 def test_profiles_produce_full_playback_window():
     assert profile_duration("16fps-portrait-3x4") == 5.0
-    assert profile_duration("20fps-hq") == 4.8
+    assert profile_duration("20fps-4x3-balanced") == 4.8
 
 
 def test_first_generation_uses_low_latency_variant_for_every_profile():
@@ -40,8 +40,10 @@ def test_first_generation_uses_low_latency_variant_for_every_profile():
         "16fps-portrait-416x672", "16fps-portrait-416x704", "16fps-portrait-480x640",
         "16fps-672x416", "16fps-704x416", "16fps-640x480",
         "16fps-portrait-480x800", "16fps-800x480",
-        "16fps-portrait-3x4", "16fps-portrait", "20fps-hq", "20fps-4x3-balanced",
-        "24fps-fast", "24fps-3x2", "24fps-portrait",
+        "16fps-portrait-3x4", "16fps-portrait", "20fps-4x3-balanced",
+        "20fps-portrait-416x704", "20fps-portrait-480x640", "20fps-704x416", "20fps-640x480",
+        "24fps-3x2", "24fps-portrait",
+        "24fps-portrait-384x640", "24fps-portrait-416x704", "24fps-640x384", "24fps-704x416",
     }
     for selected, startup in STARTUP_PROFILES.items():
         selected_width, selected_height, selected_fps, selected_frames = VIDEO_PROFILES[selected]
@@ -64,7 +66,7 @@ def test_job_polling_is_low_latency_by_default():
 
 
 def test_gateway_generate_defaults_to_eight_steps():
-    assert GatewayClient.generate.__defaults__ == ("20fps-hq", 8, None, None, None, None)
+    assert GatewayClient.generate.__defaults__ == ("20fps-4x3-balanced", 8, None, None, None, None)
 
 
 def test_video_prompt_contains_exact_spoken_text_and_articulation():

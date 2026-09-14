@@ -56,7 +56,7 @@ class NarrationSession(BaseModel):
     video_instruction: str = ""
     action_level: str = "low"
     voice_id: int
-    video_profile: str = "20fps-hq"
+    video_profile: str = "20fps-4x3-balanced"
     character_mode: str = "standard"
     lip_sync_mode: str = "natural"
     idle_motion_profile: str = "wide"

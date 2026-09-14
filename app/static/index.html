@@ -92,13 +92,19 @@
               <option value="16fps-portrait-480x800">480×800（3:5 縦型・最高解像度）</option>
             </optgroup>
             <optgroup label="20fps・バランス" data-i18n-label="profile20">
-              <option value="20fps-hq" selected>576×320（16:9）</option>
-              <option value="20fps-4x3-balanced">512×384（4:3）</option>
+              <option value="20fps-4x3-balanced" selected>512×384（4:3）</option>
+              <option value="20fps-640x480">640×480（4:3 高解像度）</option>
+              <option value="20fps-704x416">704×416（横 17:10）</option>
+              <option value="20fps-portrait-480x640">480×640（3:4 縦型）</option>
+              <option value="20fps-portrait-416x704">416×704（3:5 縦型）</option>
             </optgroup>
             <optgroup label="24fps・動き優先" data-i18n-label="profile24">
-              <option value="24fps-fast">512×288（16:9）</option>
               <option value="24fps-3x2">480×320（3:2）</option>
+              <option value="24fps-640x384">640×384（横 5:3）</option>
+              <option value="24fps-704x416">704×416（横 17:10・上限）</option>
               <option value="24fps-portrait" data-i18n="profilePortrait916">288×512（9:16 縦型）</option>
+              <option value="24fps-portrait-384x640">384×640（3:5 縦型）</option>
+              <option value="24fps-portrait-416x704">416×704（3:5 縦型・上限）</option>
             </optgroup>
           </select>
         </label>
@@ -181,6 +187,6 @@
       <ol id="chunks"></ol>
     </section>
   </main>
-  <script src="/static/app.js?v=32"></script>
+  <script src="/static/app.js?v=33"></script>
 </body>
 </html>

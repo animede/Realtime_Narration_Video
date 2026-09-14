@@ -326,8 +326,11 @@ const profileSizes = {
   "16fps-portrait-416x672": [416, 672], "16fps-portrait-416x704": [416, 704],
   "16fps-portrait-480x640": [480, 640], "16fps-portrait-480x800": [480, 800], "16fps-800x480": [800, 480],
   "16fps-4x3-resolution": [512, 384], "16fps-portrait-3x4": [384, 512],
-  "16fps-portrait": [384, 640], "20fps-hq": [576, 320],
-  "20fps-4x3-balanced": [512, 384], "24fps-fast": [512, 288],
+  "16fps-portrait": [384, 640],
+  "20fps-4x3-balanced": [512, 384], "20fps-640x480": [640, 480], "20fps-704x416": [704, 416],
+  "20fps-portrait-480x640": [480, 640], "20fps-portrait-416x704": [416, 704],
+  "24fps-640x384": [640, 384], "24fps-704x416": [704, 416],
+  "24fps-portrait-384x640": [384, 640], "24fps-portrait-416x704": [416, 704],
   "24fps-3x2": [480, 320], "24fps-portrait": [288, 512]
 };
 

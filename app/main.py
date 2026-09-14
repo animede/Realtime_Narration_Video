@@ -75,7 +75,7 @@ async def create_session(
     video_instruction: str = Form(""),
     action_level: str = Form("low"),
     voice_id: int = Form(settings.tts_speaker_id),
-    video_profile: str = Form("20fps-hq"),
+    video_profile: str = Form("20fps-4x3-balanced"),
     character_mode: str = Form("standard"),
     lip_sync_mode: str = Form("natural"),
     idle_motion_profile: str = Form("wide"),
