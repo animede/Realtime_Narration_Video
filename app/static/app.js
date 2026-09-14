@@ -163,7 +163,7 @@ function applyLanguage() {
   });
   if (latestSession) processSession(latestSession);
   if (typeof applySettingsHidden === "function" && toggleSettings) applySettingsHidden();
-  const settingsButton = form.querySelector("button");
+  const settingsButton = form.querySelector('button[type="submit"]');
   if (sessionId && !latestSession?.error) {
     settingsButton.textContent = t("configured");
   }
@@ -459,7 +459,7 @@ textFileInput.addEventListener("change", () => {
 installDropZone(textDrop, file => setDroppedFile(textFileInput, file));
 
 function markSettingsDirty() {
-  const button = form.querySelector("button");
+  const button = form.querySelector('button[type="submit"]');
   const busy = latestSession && ["chatting", "synthesizing", "generating", "playable"].includes(latestSession.status);
   settingsDirty = true;
   button.disabled = Boolean(busy);
@@ -527,7 +527,7 @@ regenerateIdleButton.addEventListener("click", async () => {
 
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
-  const button = form.querySelector("button");
+  const button = form.querySelector('button[type="submit"]');
   button.disabled = true;
   button.textContent = t("configuring");
   statusLabel.textContent = t("preparingModel");
@@ -679,7 +679,7 @@ function processSession(session) {
   advanceAfterSpeech(session.chunks);
   if (["completed", "failed", "cancelled"].includes(session.status)) {
     idleFrozen = false;
-    form.querySelector("button").disabled = false;
+    form.querySelector('button[type="submit"]').disabled = false;
     chatForm.querySelector("button").disabled = false;
     narrationButton.disabled = false;
     narrationText.disabled = false;
