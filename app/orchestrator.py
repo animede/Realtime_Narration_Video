@@ -99,8 +99,21 @@ class Orchestrator:
         temporary.replace(folder / "session.json")
 
     async def _build_idle_loop(self, session: NarrationSession, gateway: GatewayClient,
-                               folder: Path, character: Path) -> Path:
-        """Generate the FLF-anchored idle clip and turn it into the display loop."""
+                               folder: Path, character: Path,
+                               neutral_target: Path | None = None) -> Path:
+        """Generate the idle clip and turn it into the display loop.
+
+        Two liveliness modes (2026-09-14 実測):
+        - calm: both ends FLF-anchored to the input image → perfectly seamless
+          loop, but the anchor suppresses motion globally (~2.2 → こぢんまり).
+        - lively(既定): 往路+復路の2本構成(ユーザー案)。往路は先頭アンカーのみで
+          自由に動かし(アンカーを外すと動きが2倍になる。プロンプト・ネガティブ・
+          アンカー強度では制御不能と同一seed A/Bで確認済み)、復路は「往路の最終
+          フレーム→入力画像」のFLFで元のポーズへ帰す。連結すると入力ポーズで
+          始まり入力ポーズで終わるためハードカットもクロスフェードも不要
+          (顔ブレンドは顔崩壊するため厳禁)。
+        """
+        lively = session.idle_liveliness != "calm"
         preparation_profile = session.video_profile
         _, _, idle_fps, preparation_frames = VIDEO_PROFILES[preparation_profile]
         idle_frames = preparation_frames
@@ -110,38 +123,138 @@ class Orchestrator:
         idle_image_id, idle_audio_id = await asyncio.gather(
             gateway.upload(character), gateway.upload(idle_condition)
         )
-        idle_result = await gateway.generate(
-            idle_image_id, idle_audio_id, last_image_id=idle_image_id,
-            prompt=
-            "Seamless idle loop of the same character waiting calmly in the same scene. The lips remain "
-            "naturally closed with no speaking or mouth articulation. The eyes stay open almost the whole "
-            "time; at most one soft, brief blink may occur. Allow subtle breathing and a relaxed expression "
-            "with faint mouth-corner micro-movement; the head and body remain nearly still. "
-            "No gestures, nodding, swaying, camera "
-            "movement, or scene change. Use a completely locked-off camera with "
-            "fixed focal length: zero zoom, dolly, reframing, or change in subject scale. Keep a calm, "
-            "consistent expression throughout. Preserve exact identity and pixel-consistent composition. "
-            "Finish in the same neutral pose as the first frame for a smooth loop.",
-            seed=session.video_seed, video_profile=preparation_profile,
-            steps=8, num_frames=idle_frames,
+        camera_tail = (
+            "No gestures, camera movement, or scene change. Use a completely locked-off camera with "
+            "fixed focal length: zero zoom, dolly, reframing, or change in subject scale. "
+            "Preserve exact identity and pixel-consistent composition. "
         )
+        if lively:
+            idle_prompt = (
+                "Idle video of the same character waiting in the same scene, full of quiet life. "
+                "The lips remain naturally closed with no speaking or mouth articulation. The eyes stay "
+                "open almost the whole time; at most one soft, brief blink may occur. Lively natural idle "
+                "motion: visible breathing, gentle weight shifts from side to side, small head tilts and "
+                "turns, hair swaying as if in a light breeze, softly changing relaxed expression. "
+                + camera_tail
+            )
+        else:
+            idle_prompt = (
+                "Seamless idle loop of the same character waiting calmly in the same scene. The lips remain "
+                "naturally closed with no speaking or mouth articulation. The eyes stay open almost the whole "
+                "time; at most one soft, brief blink may occur. Allow subtle breathing and a relaxed expression "
+                "with faint mouth-corner micro-movement; the head and body remain nearly still. "
+                "No gestures, nodding, swaying, camera "
+                "movement, or scene change. Use a completely locked-off camera with "
+                "fixed focal length: zero zoom, dolly, reframing, or change in subject scale. Keep a calm, "
+                "consistent expression throughout. Preserve exact identity and pixel-consistent composition. "
+                "Finish in the same neutral pose as the first frame for a smooth loop."
+            )
         idle_raw = folder / "character-idle-raw.mp4"
-        await gateway.download(idle_result["result"]["video_url"], idle_raw)
+        # 位置飛び(>5px/フレーム)は生成に焼き込まれるためseedを変えて引き直す。
+        # 3回とも不合格なら最も飛びの小さかったものを採用する。
+        jump_limit = 5.0
+        best_jump = None
+        for attempt in range(3):
+            idle_result = await gateway.generate(
+                idle_image_id, idle_audio_id,
+                last_image_id=None if lively else idle_image_id,
+                prompt=idle_prompt,
+                seed=session.video_seed + attempt * 101,
+                video_profile=preparation_profile,
+                steps=8, num_frames=idle_frames,
+            )
+            candidate = folder / "character-idle-candidate.mp4"
+            await gateway.download(idle_result["result"]["video_url"], candidate)
+            jump = await asyncio.to_thread(self._max_translation_jump, candidate)
+            if best_jump is None or jump < best_jump:
+                best_jump = jump
+                candidate.replace(idle_raw)
+            else:
+                candidate.unlink(missing_ok=True)
+            if best_jump <= jump_limit:
+                break
+        return_frames = 0
+        outbound_end = idle_frames - 1
+        if lively:
+            # 復路: 往路から元の入力画像へFLFで帰す(ユーザー案)。橋渡しフレームは
+            # 「終盤で最もシャープかつ動きの少ないフレーム」を選ぶ — 最終フレーム
+            # 固定だとモーションブラーの乗ったフレームを条件にしてしまい、復路の
+            # 画質が一段落ちる(2026-09-14 実測: 接合点以降がソフトに崩れた)。
+            bridge = folder / "character-idle-bridge.png"
+            outbound_end = await asyncio.to_thread(self._select_bridge, idle_raw, bridge)
+            # 復路はゆっくり戻す。短いと引き戻しが急になり位置が飛ぶ
+            # (2026-09-14 実測: 9.5px/フレームの瞬間ずれ。通常は0.4px)。
+            return_frames = 8 * max(3, round((idle_frames - 1) / 12)) + 1
+            return_condition = folder / "character-idle-return.wav"
+            return_condition.write_bytes(
+                silent_wav((return_frames - 1) / idle_fps + 0.2))
+            bridge_id, return_audio_id = await asyncio.gather(
+                gateway.upload(bridge), gateway.upload(return_condition)
+            )
+            return_raw = folder / "character-idle-return.mp4"
+            best_jump = None
+            for attempt in range(3):
+                return_result = await gateway.generate(
+                    bridge_id, return_audio_id, last_image_id=idle_image_id,
+                    prompt=(
+                        "Idle video of the same character in the same scene. The lips remain naturally "
+                        "closed with no speaking or mouth articulation; the eyes stay open. The character "
+                        "stays almost still, breathing gently, and very slowly and smoothly settles back "
+                        "into the original relaxed neutral pose. Every movement is slight, gradual, and "
+                        "continuous — no sudden movement, no quick shift, no jump. The footage stays "
+                        "sharp, crisp, and in focus with high detail throughout. " + camera_tail +
+                        "Finish exactly in the same neutral pose as the reference for a smooth loop."
+                    ),
+                    seed=session.video_seed + attempt * 77,
+                    video_profile=preparation_profile,
+                    steps=8, num_frames=return_frames,
+                )
+                candidate = folder / "character-idle-return-candidate.mp4"
+                await gateway.download(return_result["result"]["video_url"], candidate)
+                jump = await asyncio.to_thread(self._max_translation_jump, candidate)
+                if best_jump is None or jump < best_jump:
+                    best_jump = jump
+                    candidate.replace(return_raw)
+                else:
+                    candidate.unlink(missing_ok=True)
+                if best_jump <= jump_limit:
+                    break
+            combined = folder / "character-idle-combined.mp4"
+            await self._concat_clips(idle_raw, return_raw, combined,
+                                     first_end_frame=outbound_end)
+            return_raw.unlink(missing_ok=True)
+            bridge.unlink(missing_ok=True)
+            idle_raw.unlink(missing_ok=True)
+            idle_raw = combined
         # LTX leaves a slow zoom/translation drift on the clip even with a
         # locked-off-camera prompt. Align every frame to the first frame
         # (background-referenced affine) so the camera is truly fixed.
+        # 機械的なワープなので万能ではない(白背景での推定不安定などの実例あり)
+        # — UIのカメラロック設定で無効化できる。FLF/復路の錨止めだけでも
+        # ドリフトは「必ず元に戻る」範囲に収まる。
         idle_locked = folder / "character-idle-locked.mp4"
-        await asyncio.to_thread(self._lock_camera, idle_raw, idle_locked)
+        if session.camera_lock_enabled:
+            await asyncio.to_thread(self._lock_camera, idle_raw, idle_locked)
+        else:
+            shutil.copyfile(idle_raw, idle_locked)
+        if neutral_target is not None:
+            # Take the closed-mouth reference from the input-anchored clip start.
+            await self._frame_at(idle_locked, neutral_target, 0.05)
         idle_video = folder / "character-idle.mp4"
         idle_slowdown = IDLE_MOTION_PROFILES.get(
             session.idle_motion_profile, IDLE_MOTION_PROFILES["wide"]
         )
-        # Both clip ends are anchored to the input image, so the full clip
-        # loops natively; shave one frame so the anchor pose is not shown
-        # twice at the loop point.
+        # The sequence starts and ends at the input pose (calm: FLF both ends,
+        # lively: 往路+復路), so the full clip loops natively; shave one frame
+        # so the anchor pose is not shown twice at the loop point.
+        if lively:
+            # 使用フレーム: 往路 0..outbound_end + 復路(先頭の重複を除く)。
+            loop_seconds = (outbound_end + return_frames - 2) / idle_fps
+        else:
+            loop_seconds = idle_seconds - 1.0 / idle_fps
         await self._make_seamless_loop(
             idle_locked, idle_video,
-            duration_seconds=idle_seconds - 1.0 / idle_fps,
+            duration_seconds=loop_seconds,
             slowdown=idle_slowdown,
         )
         idle_raw.unlink(missing_ok=True)
@@ -187,11 +300,11 @@ class Orchestrator:
             folder = self.settings.data_dir / session.id
             preparation_profile = session.video_profile
             _, _, _, preparation_frames = VIDEO_PROFILES[preparation_profile]
-            idle_video = await self._build_idle_loop(session, gateway, folder, character)
-            # Use the first displayed idle pose as the common closed-mouth source
-            # for natural speech and all articulation anchors.
+            # The closed-mouth reference for natural speech and all
+            # articulation anchors comes from the camera-locked clip start.
             neutral = folder / "character-neutral.png"
-            await self._frame_at(idle_video, neutral, 0.05)
+            await self._build_idle_loop(session, gateway, folder, character,
+                                        neutral_target=neutral)
             self.save(session)
 
             if speech_task is not None:
@@ -593,6 +706,32 @@ class Orchestrator:
         border_mask[int(small_h * 0.15):int(small_h * 0.85),
                     int(small_w * 0.2):int(small_w * 0.8)] = 0
         criteria = (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 80, 1e-5)
+
+        def sanitize(raw: np.ndarray) -> np.ndarray | None:
+            """Project the affine fit to a similarity and reject wild fits.
+
+            The full 6-DOF affine admits shear and anisotropic stretch, and a
+            fit polluted by subject motion (hair/body entering the border
+            mask) warps the image visibly (2026-09-14 実測: 非等方4.3%・回転
+            2.8°・並進14px が混入して「画像が歪む」)。A camera on a tripod can
+            only drift by a tiny uniform zoom/rotation/shift, so anything
+            larger is a bad estimate, not the camera.
+            """
+            linear = raw[:2, :2].astype(np.float64)
+            u, singular, vt = np.linalg.svd(linear)
+            rotation = u @ vt
+            if np.linalg.det(rotation) < 0:
+                return None
+            uniform = float(singular.mean())
+            angle = np.arctan2(rotation[1, 0], rotation[0, 0])
+            tx, ty = float(raw[0, 2]) / scale, float(raw[1, 2]) / scale
+            if not (0.97 <= uniform <= 1.03 and abs(angle) <= np.radians(1.0)
+                    and abs(tx) <= 0.02 * width and abs(ty) <= 0.02 * height):
+                return None
+            similarity = np.eye(3)
+            similarity[:2, :2] = uniform * rotation
+            similarity[0, 2], similarity[1, 2] = tx, ty
+            return similarity
         margin = 0.02
         crop = np.array([
             [1 + 2 * margin, 0, -margin * width],
@@ -608,6 +747,25 @@ class Orchestrator:
             stdin=subprocess.PIPE,
         )
         try:
+            # Applied correction as (scale, angle, tx, ty). Real tripod drift
+            # is slow, so the correction may only change a whisker per frame —
+            # without this rate limit, textureless borders (白背景) let the ECC
+            # fit hop between solutions and the "correction" itself injects
+            # 10px級の位置飛びを起こす(2026-09-14 実測: raw 1.1px → lock後 11.5px).
+            applied_params = np.array([1.0, 0.0, 0.0, 0.0])
+            step_limits = np.array([0.0015, np.radians(0.05), 0.5, 0.5])
+            good_warp = warp.copy()
+
+            def to_matrix(params):
+                s, angle, tx, ty = params
+                matrix = np.eye(3)
+                matrix[0, 0] = s * np.cos(angle)
+                matrix[0, 1] = -s * np.sin(angle)
+                matrix[1, 0] = s * np.sin(angle)
+                matrix[1, 1] = s * np.cos(angle)
+                matrix[0, 2], matrix[1, 2] = tx, ty
+                return matrix
+
             for index, frame in enumerate(frames):
                 if index:
                     try:
@@ -616,10 +774,22 @@ class Orchestrator:
                             cv2.MOTION_AFFINE, criteria, border_mask, 5)
                     except cv2.error:
                         pass  # keep the previous warp — drift changes slowly
-                # Rescale the low-resolution translation to full resolution.
-                full = np.vstack([warp, [0, 0, 1]]).astype(np.float64)
-                full[:2, 2] /= scale
-                correction = crop @ np.linalg.inv(full)
+                    similarity = sanitize(warp)
+                    if similarity is None:
+                        # Bad fit: keep the last good correction and restart
+                        # the warm start from it so the error cannot snowball.
+                        warp = good_warp.copy()
+                    else:
+                        target = np.array([
+                            float(np.hypot(similarity[0, 0], similarity[1, 0])),
+                            float(np.arctan2(similarity[1, 0], similarity[0, 0])),
+                            float(similarity[0, 2]), float(similarity[1, 2]),
+                        ])
+                        delta = np.clip(target - applied_params, -step_limits, step_limits)
+                        applied_params = applied_params + delta
+                        good_warp = warp.copy()
+                applied = to_matrix(applied_params)
+                correction = crop @ np.linalg.inv(applied)
                 warped = cv2.warpAffine(frame, correction[:2], (width, height),
                                         flags=cv2.INTER_LANCZOS4,
                                         borderMode=cv2.BORDER_REPLICATE)
@@ -629,6 +799,93 @@ class Orchestrator:
             encoder.wait()
         if encoder.returncode:
             shutil.copyfile(video, target)
+
+    @staticmethod
+    def _max_translation_jump(video: Path) -> float:
+        """Largest frame-to-frame subject translation (px, phase correlation).
+
+        Sudden position snaps (9〜13px/フレーム、通常は~0.4px) は生成に焼き込まれて
+        いてプロンプトでは防げない(2026-09-14 実測)。検出してseedを変えて引き直す。
+        """
+        import cv2
+        import numpy as np
+
+        capture = cv2.VideoCapture(str(video))
+        previous = None
+        worst = 0.0
+        while True:
+            ok, frame = capture.read()
+            if not ok:
+                break
+            h, w = frame.shape[:2]
+            gray = cv2.cvtColor(frame[h // 6:h * 5 // 6, w // 6:w * 5 // 6],
+                                cv2.COLOR_BGR2GRAY).astype(np.float32)
+            if previous is not None:
+                (dx, dy), _ = cv2.phaseCorrelate(previous, gray)
+                worst = max(worst, float((dx * dx + dy * dy) ** 0.5))
+            previous = gray
+        capture.release()
+        return worst
+
+    @staticmethod
+    def _select_bridge(video: Path, bridge: Path) -> int:
+        """Pick the sharpest low-motion frame near the clip end as the bridge.
+
+        Conditioning the return clip on a motion-blurred frame degrades its
+        whole output, so among the final 40% of frames only those with
+        below-median inter-frame motion are considered, and the one with the
+        highest Laplacian sharpness wins. Returns the chosen frame index.
+        """
+        import cv2
+        import numpy as np
+
+        capture = cv2.VideoCapture(str(video))
+        frames = []
+        while True:
+            ok, frame = capture.read()
+            if not ok:
+                break
+            frames.append(frame)
+        capture.release()
+        if len(frames) < 8:
+            cv2.imwrite(str(bridge), frames[-1])
+            return len(frames) - 1
+        start = int(len(frames) * 0.6)
+        candidates = []
+        for i in range(start, len(frames)):
+            gray = cv2.cvtColor(frames[i], cv2.COLOR_BGR2GRAY)
+            sharpness = float(cv2.Laplacian(gray, cv2.CV_64F).var())
+            motion = float(np.mean(np.abs(frames[i].astype(np.int16)
+                                          - frames[i - 1].astype(np.int16))))
+            candidates.append((i, sharpness, motion))
+        median_motion = float(np.median([m for _, _, m in candidates]))
+        settled = [c for c in candidates if c[2] <= median_motion] or candidates
+        best = max(settled, key=lambda c: c[1])[0]
+        cv2.imwrite(str(bridge), frames[best])
+        return best
+
+    @staticmethod
+    async def _concat_clips(first: Path, second: Path, target: Path,
+                            first_end_frame: int | None = None) -> None:
+        """Join the outbound clip and the return clip into one sequence.
+
+        The outbound clip is cut right after the bridge frame and the return
+        clip is conditioned on that frame, so the return clip's first frame
+        duplicates it and gets dropped at the junction.
+        """
+        first_trim = "" if first_end_frame is None else f"trim=end_frame={first_end_frame + 1},"
+        process = await asyncio.create_subprocess_exec(
+            "ffmpeg", "-y", "-v", "error", "-i", str(first), "-i", str(second),
+            "-filter_complex",
+            f"[0:v]{first_trim}setpts=PTS-STARTPTS[out0];"
+            "[1:v]trim=start_frame=1,setpts=PTS-STARTPTS[ret];"
+            "[out0][ret]concat=n=2:v=1:a=0,format=yuv420p[out]",
+            "-map", "[out]", "-an", "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
+            str(target), stderr=asyncio.subprocess.PIPE,
+        )
+        _, stderr = await process.communicate()
+        if process.returncode or not target.is_file() or target.stat().st_size == 0:
+            raise RuntimeError(f"待機動画の連結に失敗しました: {stderr.decode()[-500:]}")
 
     @staticmethod
     async def _make_seamless_loop(video: Path, target: Path,

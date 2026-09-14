@@ -59,6 +59,8 @@ class NarrationSession(BaseModel):
     character_mode: str = "standard"
     lip_sync_mode: str = "natural"
     idle_motion_profile: str = "wide"
+    idle_liveliness: str = "lively"
+    camera_lock_enabled: bool = False
     video_seed: int = 1004
     video_steps: int = 4
     modality_scale_enabled: bool = False

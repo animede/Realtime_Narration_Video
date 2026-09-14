@@ -77,6 +77,8 @@ async def create_session(
     character_mode: str = Form("standard"),
     lip_sync_mode: str = Form("natural"),
     idle_motion_profile: str = Form("wide"),
+    idle_liveliness: str = Form("lively"),
+    camera_lock_enabled: bool = Form(False),
     video_seed: int = Form(1004),
     video_steps: int = Form(4),
     modality_scale_enabled: bool = Form(False),
@@ -106,6 +108,8 @@ async def create_session(
         raise HTTPException(400, "リップシンク設定が不正です")
     if idle_motion_profile not in {"closeup", "upper_body", "wide"}:
         raise HTTPException(400, "アイドル動作設定が不正です")
+    if idle_liveliness not in {"calm", "lively"}:
+        raise HTTPException(400, "待機の動き設定が不正です")
     if not 0 <= video_seed <= 2_147_483_647:
         raise HTTPException(400, "seedは0～2147483647で指定してください")
     if not 1 <= video_steps <= 12:
@@ -119,7 +123,9 @@ async def create_session(
         action_level=action_level,
         voice_id=voice_id, video_profile=video_profile,
         character_mode=character_mode, lip_sync_mode=lip_sync_mode,
-        idle_motion_profile=idle_motion_profile, video_seed=video_seed,
+        idle_motion_profile=idle_motion_profile, idle_liveliness=idle_liveliness,
+        camera_lock_enabled=camera_lock_enabled,
+        video_seed=video_seed,
         video_steps=video_steps, modality_scale_enabled=modality_scale_enabled,
         ui_language=ui_language, conversation_language=conversation_language,
         target_chunk_seconds=target_chunk_seconds,
@@ -154,6 +160,8 @@ class SessionSettingsUpdate(BaseModel):
     video_instruction: str | None = None
     action_level: str | None = None
     lip_sync_mode: str | None = None
+    idle_liveliness: str | None = None
+    camera_lock_enabled: bool | None = None
     conversation_language: str | None = None
     voice_id: int | None = None
     video_seed: int | None = None
@@ -173,6 +181,8 @@ async def update_session_settings(session_id: str, request: SessionSettingsUpdat
         "natural", "balanced", "medium", "medium_strong", "strong", "fast"
     }:
         raise HTTPException(400, "リップシンク設定が不正です")
+    if "idle_liveliness" in values and values["idle_liveliness"] not in {"calm", "lively"}:
+        raise HTTPException(400, "待機の動き設定が不正です")
     if "conversation_language" in values and values["conversation_language"] not in {"auto", "ja", "en"}:
         raise HTTPException(400, "会話言語が不正です")
     if "video_seed" in values and not 0 <= values["video_seed"] <= 2_147_483_647:

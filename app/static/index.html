@@ -98,6 +98,18 @@
         <div class="options">
           <label class="live-setting"><span data-i18n="speakerId">話者ID</span><input name="voice_id" type="number" value="888753760"></label>
           <label class="live-setting"><span data-i18n="videoSeed">動画seed</span><input name="video_seed" type="number" min="0" max="2147483647" step="1" value="1004"></label>
+          <label class="live-setting"><span data-i18n="idleLiveliness">待機の動き</span>
+            <select name="idle_liveliness">
+              <option value="lively" selected data-i18n="idleLively">活発（継ぎ目はクロスフェード）</option>
+              <option value="calm" data-i18n="idleCalm">静か（完全ループ）</option>
+            </select>
+          </label>
+          <label class="live-setting"><span data-i18n="cameraLock">カメラロック（待機動画）</span>
+            <select name="camera_lock_enabled">
+              <option value="true" data-i18n="cameraLockOn">有効（ドリフト固定）</option>
+              <option value="false" selected data-i18n="cameraLockOff">無効（生成のまま）</option>
+            </select>
+          </label>
           <button type="button" id="regenerate-idle" class="live-setting" data-i18n="regenerateIdle" hidden>待機動画を再生成</button>
           <label class="live-setting"><span data-i18n="chunkSeconds">チャンク秒数</span><input name="target_chunk_seconds" type="number" min="3.5" max="5" step="0.1" value="5"></label>
           <label class="live-setting"><span data-i18n="preloadCount">先読み数</span><input name="startup_buffer_chunks" type="number" min="1" max="5" value="1"></label>

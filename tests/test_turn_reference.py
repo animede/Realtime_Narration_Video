@@ -65,12 +65,17 @@ def test_character_preparation_creates_idle_loop_for_every_mode():
     assert 'folder / "character-idle-raw.mp4"' in source
     assert "Seamless idle loop" in source
     assert "_make_seamless_loop" in source
+    assert "_concat_clips" in source
     assert "last_image_id=idle_image_id" in source
+    assert 'session.idle_liveliness != "calm"' in source
+    assert "last_image_id=None if lively else idle_image_id" in source
+    assert "if session.camera_lock_enabled" in source
     assert "_lock_camera" in source
     assert "at most one soft, brief blink" in source
     assert "faint mouth-corner micro-movement" in source
     assert "idle_frames = preparation_frames" in source
-    assert "duration_seconds=idle_seconds - 1.0 / idle_fps" in source
+    assert "loop_seconds = (outbound_end + return_frames - 2) / idle_fps" in source
+    assert "_select_bridge" in source
     assert "IDLE_MOTION_PROFILES" in source
     assert '"closeup": 1.0' in source
     assert '"upper_body": 1.0' in source
@@ -95,6 +100,8 @@ def test_wide_idle_motion_profile_is_stable_default():
     from app.models import NarrationSession
 
     assert NarrationSession(text="", voice_id=1).idle_motion_profile == "wide"
+    assert NarrationSession(text="", voice_id=1).idle_liveliness == "lively"
+    assert NarrationSession(text="", voice_id=1).camera_lock_enabled is False
 
 
 def test_reliable_articulation_seed_is_default():

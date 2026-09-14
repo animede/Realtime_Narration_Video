@@ -47,6 +47,8 @@ const messages = {
     speakerId: "話者ID", videoSeed: "動画seed", chunkSeconds: "チャンク秒数", preloadCount: "先読み数",
     videoSteps: "生成steps（後続動画）", modalityScale: "口動作強調（scale 1.3）", scaleOn: "有効", scaleOff: "無効（高速）",
     regenerateIdle: "待機動画を再生成", regeneratingIdle: "待機動画を生成中（seedを変えてガチャできます）",
+    idleLiveliness: "待機の動き", idleLively: "活発（継ぎ目はクロスフェード）", idleCalm: "静か（完全ループ）",
+    cameraLock: "カメラロック（待機動画）", cameraLockOn: "有効（ドリフト固定）", cameraLockOff: "無効（生成のまま）",
     setCharacter: "キャラクターを設定", updateSettings: "設定を更新", configured: "設定済み", idleCharacter: "待機中のキャラクター",
     narrationLabel: "朗読させたい文章", narrationPlaceholder: "文章を入力・貼り付け、またはTXTファイルをドロップ",
     selectTextFile: "TXTを選択", narrate: "朗読", idle: "待機中", configuredCharacter: "設定したキャラクター",
@@ -87,6 +89,8 @@ const messages = {
     speakerId: "Speaker ID", videoSeed: "Video seed", chunkSeconds: "Chunk seconds", preloadCount: "Startup buffer",
     videoSteps: "Video steps (follow-up)", modalityScale: "Mouth emphasis (scale 1.3)", scaleOn: "Enabled", scaleOff: "Disabled (fast)",
     regenerateIdle: "Regenerate idle video", regeneratingIdle: "Regenerating the idle video (change the seed to reroll)",
+    idleLiveliness: "Idle motion", idleLively: "Lively (crossfaded loop seam)", idleCalm: "Calm (perfect loop)",
+    cameraLock: "Camera lock (idle video)", cameraLockOn: "Enabled (pins drift)", cameraLockOff: "Disabled (as generated)",
     setCharacter: "Set character", updateSettings: "Update settings", configured: "Configured", idleCharacter: "Idle character",
     narrationLabel: "Text to narrate", narrationPlaceholder: "Type or paste text, or drop a TXT file",
     selectTextFile: "Choose TXT", narrate: "Narrate", idle: "Idle", configuredCharacter: "Configured character",
@@ -158,7 +162,8 @@ let liveSettingsPromise = Promise.resolve();
 let liveSettingsRevision = 0;
 const liveSettingNames = [
   "concept", "video_instruction", "action_level", "lip_sync_mode", "conversation_language", "voice_id",
-  "video_seed", "video_steps", "modality_scale_enabled", "target_chunk_seconds", "startup_buffer_chunks"
+  "video_seed", "video_steps", "modality_scale_enabled", "idle_liveliness",
+  "camera_lock_enabled", "target_chunk_seconds", "startup_buffer_chunks"
 ];
 const profileSizes = {
   "16fps-resolution": [640, 352], "16fps-5x3": [640, 384], "16fps-3x2": [576, 384],
