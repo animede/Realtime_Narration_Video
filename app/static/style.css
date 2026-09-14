@@ -66,6 +66,11 @@ textarea { resize: vertical; }
 button { border: 0; border-radius: 10px; padding: 13px; background: #65dffc; color: #041019; font-weight: 800; cursor: pointer; }
 button:disabled { opacity: .45; }
 .status-row { display: flex; justify-content: space-between; color: #9fc7ff; margin-bottom: 12px; }
+.status-left { display: flex; align-items: center; gap: 10px; }
+.panel-toggle { width: 30px; padding: 4px 0; border: 1px solid #35455f; border-radius: 7px; background: #0b111e; color: #9fc7ff; cursor: pointer; font: inherit; }
+.panel-toggle:hover { border-color: #68e4ff; color: #68e4ff; }
+main.settings-hidden { grid-template-columns: 1fr; }
+main.settings-hidden .input-panel { display: none; }
 .video-stack { position: relative; width: 100%; background: #02040a; border-radius: 12px; overflow: hidden; }
 .stage-media { position: absolute; inset: 0; z-index: 2; width: 100%; height: 100%; object-fit: cover; object-position: center; background: #02040a; opacity: 0; transition: opacity .36s ease; pointer-events: none; }
 .stage-idle { object-fit: contain; }

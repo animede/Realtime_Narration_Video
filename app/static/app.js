@@ -57,7 +57,7 @@ const messages = {
     narrationLabel: "朗読させたい文章", narrationPlaceholder: "文章を入力・貼り付け、またはTXTファイルをドロップ",
     selectTextFile: "TXTを選択", narrate: "朗読", idle: "待機中", configuredCharacter: "設定したキャラクター",
     captionPlaceholder: "生成を開始すると、ここに読み上げ内容が表示されます。",
-    messagePlaceholder: "テキストを入力・貼り付け。Enterで送信、Shift+Enterで改行。", send: "送信",
+    messagePlaceholder: "テキストを入力・貼り付け。Enterで送信、Shift+Enterで改行。", send: "送信", sendCombined: "送信・朗読",
     inlineVideoInstructionHint: "文頭に［手を上げながら］のように書くと、そのターンだけの動画指示になります。指示部分は読み上げません。",
     queued: "チャット入力待ち", preparing: "キャラクターを準備中", chatting: "Gemma 4が応答中",
     synthesizing: "音声を合成中", generating: "映像を生成中", playable: "再生可能", completed: "生成完了",
@@ -102,7 +102,7 @@ const messages = {
     narrationLabel: "Text to narrate", narrationPlaceholder: "Type or paste text, or drop a TXT file",
     selectTextFile: "Choose TXT", narrate: "Narrate", idle: "Idle", configuredCharacter: "Configured character",
     captionPlaceholder: "Spoken text will appear here after generation starts.",
-    messagePlaceholder: "Type or paste text. Enter sends; Shift+Enter adds a line.", send: "Send",
+    messagePlaceholder: "Type or paste text. Enter sends; Shift+Enter adds a line.", send: "Send", sendCombined: "Send / Narrate",
     inlineVideoInstructionHint: "Start with [raise one hand] to direct that turn's video. The instruction is not spoken.",
     queued: "Ready for chat", preparing: "Preparing character", chatting: "Gemma 4 is responding",
     synthesizing: "Synthesizing speech", generating: "Generating video", playable: "Playable", completed: "Generation complete",
@@ -122,6 +122,22 @@ function t(key, ...args) {
   const value = messages[uiLanguage][key] ?? messages.ja[key] ?? key;
   return typeof value === "function" ? value(...args) : value;
 }
+
+const toggleSettings = document.querySelector("#toggle-settings");
+let settingsHidden = localStorage.getItem("settingsHidden") === "1";
+
+function applySettingsHidden() {
+  document.querySelector("main").classList.toggle("settings-hidden", settingsHidden);
+  toggleSettings.textContent = settingsHidden ? "▶" : "◀";
+  // 折りたたみ中は送信ボタンが朗読を兼ねる
+  chatForm.querySelector("button").textContent = t(settingsHidden ? "sendCombined" : "send");
+}
+toggleSettings.addEventListener("click", () => {
+  settingsHidden = !settingsHidden;
+  localStorage.setItem("settingsHidden", settingsHidden ? "1" : "0");
+  applySettingsHidden();
+});
+applySettingsHidden();
 
 function applyLanguage() {
   document.documentElement.lang = uiLanguage;
@@ -143,6 +159,7 @@ function applyLanguage() {
     element.label = t(element.dataset.i18nLabel);
   });
   if (latestSession) processSession(latestSession);
+  if (typeof applySettingsHidden === "function" && toggleSettings) applySettingsHidden();
   const settingsButton = form.querySelector("button");
   if (sessionId && !latestSession?.error) {
     settingsButton.textContent = t("configured");
@@ -543,7 +560,7 @@ form.addEventListener("submit", async (event) => {
   }
 });
 
-narrationButton.addEventListener("click", async () => {
+async function runNarration() {
   const text = narrationSource.value.trim();
   if (!sessionId || !text) return;
   narrationButton.disabled = true;
@@ -568,12 +585,18 @@ narrationButton.addEventListener("click", async () => {
     narrationButton.disabled = false;
     chatForm.querySelector("button").disabled = false;
   }
-});
+}
+narrationButton.addEventListener("click", () => { runNarration(); });
 
 chatForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   const text = narrationText.value.trim();
-  if (!sessionId || !text) return;
+  if (!sessionId) return;
+  if (!text) {
+    // 兼用モード: 会話入力が空なら朗読文章を読む。両方空なら何もしない。
+    if (settingsHidden && narrationSource.value.trim()) await runNarration();
+    return;
+  }
   const button = chatForm.querySelector("button");
   button.disabled = true;
   narrationButton.disabled = true;
