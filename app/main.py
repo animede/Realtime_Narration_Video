@@ -230,8 +230,8 @@ async def update_session_settings(session_id: str, request: SessionSettingsUpdat
 @app.post("/api/sessions/{session_id}/regenerate-idle", response_model=NarrationSession)
 async def regenerate_idle(session_id: str):
     session = get_session_or_404(session_id)
-    if orchestrator.is_running(session_id):
-        raise HTTPException(409, "応答の生成中は待機動画を再生成できません")
+    if orchestrator.any_conversation_running():
+        raise HTTPException(409, "会話の生成中は待機動画を再生成できません")
     if not session.character_prepared:
         raise HTTPException(400, "先にキャラクターを設定してください")
     try:
@@ -395,8 +395,8 @@ async def extend_idle_pool(session_id: str):
     session = get_session_or_404(session_id)
     if not session.character_prepared:
         raise HTTPException(400, "先にキャラクターを設定してください")
-    if orchestrator.is_running(session_id):
-        raise HTTPException(409, "応答の生成中は待機動画を追加できません")
+    if orchestrator.any_conversation_running():
+        raise HTTPException(409, "会話の生成中は待機動画を追加できません")
     try:
         await orchestrator.extend_idle_pool(session)
     except Exception as exc:

@@ -72,14 +72,20 @@ class Orchestrator:
         settings.data_dir.mkdir(parents=True, exist_ok=True)
 
     async def interrupt_idle(self, session_id: str) -> None:
-        """Stop an in-flight idle generation so a conversation can start now.
+        """Stop ALL in-flight idle generations so a conversation can start now.
 
+        単一GPU・gatewayキューイング非対応のため、会話はセッションを問わず
+        絶対優先にする(2026-09-14 実測: 別タブの追い生成ペアがターンの
+        chunk間に割り込み、409リトライで+3.3秒のギャップを作った)。
         The backend honours the interrupt at the next denoise step boundary
         (~0.5s), freeing the GPU for the first conversational chunk.
         """
-        client = self.idle_clients.get(session_id)
-        if client is not None:
+        del session_id  # 全セッション一律に中断する
+        for client in list(self.idle_clients.values()):
             await client.interrupt()
+
+    def any_conversation_running(self) -> bool:
+        return any(not task.done() for task in self.tasks.values())
 
     def register(self, session: NarrationSession) -> None:
         self.sessions[session.id] = session
