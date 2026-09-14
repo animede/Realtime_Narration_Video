@@ -36,7 +36,9 @@ def test_profiles_produce_full_playback_window():
 
 def test_first_generation_uses_low_latency_variant_for_every_profile():
     assert set(STARTUP_PROFILES) == {
-        "16fps-resolution", "16fps-4x3-resolution", "16fps-5x3", "16fps-3x2",
+        "16fps-4x3-resolution", "16fps-5x3", "16fps-3x2",
+        "16fps-portrait-416x672", "16fps-portrait-416x704", "16fps-portrait-480x640",
+        "16fps-672x416", "16fps-704x416", "16fps-640x480",
         "16fps-portrait-3x4", "16fps-portrait", "20fps-hq", "20fps-4x3-balanced",
         "24fps-fast", "24fps-3x2", "24fps-portrait",
     }

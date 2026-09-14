@@ -77,12 +77,17 @@
         <label class="setup-setting"><span data-i18n="videoProfile">動画プロファイル</span>
           <select name="video_profile" id="video-profile">
             <optgroup label="16fps・解像度優先" data-i18n-label="profile16">
-              <option value="16fps-resolution">640×352（16:9）</option>
               <option value="16fps-5x3" data-i18n="profilePeople">640×384（5:3 人物向け）</option>
               <option value="16fps-3x2" data-i18n="profileStable">576×384（3:2 安定）</option>
+              <option value="16fps-640x480">640×480（4:3 高解像度）</option>
+              <option value="16fps-672x416">672×416（横 8:5）</option>
+              <option value="16fps-704x416">704×416（横 17:10）</option>
               <option value="16fps-4x3-resolution">512×384（4:3）</option>
               <option value="16fps-portrait-3x4" data-i18n="profilePortrait34">384×512（3:4 縦型）</option>
               <option value="16fps-portrait" data-i18n="profilePortrait35">384×640（3:5 縦型・実験）</option>
+              <option value="16fps-portrait-416x672">416×672（縦 5:8）</option>
+              <option value="16fps-portrait-416x704">416×704（3:5 縦型・高解像度）</option>
+              <option value="16fps-portrait-480x640">480×640（3:4 縦型・高解像度）</option>
             </optgroup>
             <optgroup label="20fps・バランス" data-i18n-label="profile20">
               <option value="20fps-hq" selected>576×320（16:9）</option>
@@ -174,6 +179,6 @@
       <ol id="chunks"></ol>
     </section>
   </main>
-  <script src="/static/app.js?v=29"></script>
+  <script src="/static/app.js?v=30"></script>
 </body>
 </html>

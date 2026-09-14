@@ -12,8 +12,6 @@ class GatewayError(RuntimeError):
 
 
 VIDEO_PROFILES = {
-    "16fps-resolution": (640, 352, 16, 81),
-    "16fps-resolution-startup": (480, 256, 16, 81),
     "16fps-4x3-resolution": (512, 384, 16, 81),
     "16fps-4x3-resolution-startup": (384, 288, 16, 81),
     "16fps-5x3": (640, 384, 16, 81),
@@ -24,6 +22,18 @@ VIDEO_PROFILES = {
     "16fps-portrait-3x4": (384, 512, 16, 81),
     "16fps-portrait": (384, 640, 16, 81),
     "16fps-portrait-startup": (288, 480, 16, 81),
+    "16fps-portrait-416x672": (416, 672, 16, 81),
+    "16fps-portrait-416x672-startup": (320, 512, 16, 81),
+    "16fps-portrait-416x704": (416, 704, 16, 81),
+    "16fps-portrait-416x704-startup": (320, 544, 16, 81),
+    "16fps-portrait-480x640": (480, 640, 16, 81),
+    "16fps-portrait-480x640-startup": (288, 384, 16, 81),
+    "16fps-672x416": (672, 416, 16, 81),
+    "16fps-672x416-startup": (512, 320, 16, 81),
+    "16fps-704x416": (704, 416, 16, 81),
+    "16fps-704x416-startup": (544, 320, 16, 81),
+    "16fps-640x480": (640, 480, 16, 81),
+    "16fps-640x480-startup": (384, 288, 16, 81),
     "20fps-hq": (576, 320, 20, 97),
     "20fps-hq-startup": (480, 256, 20, 97),
     "20fps-4x3-balanced": (512, 384, 20, 97),
@@ -37,12 +47,17 @@ VIDEO_PROFILES = {
 }
 
 STARTUP_PROFILES = {
-    "16fps-resolution": "16fps-resolution-startup",
     "16fps-4x3-resolution": "16fps-4x3-resolution-startup",
     "16fps-5x3": "16fps-5x3-startup",
     "16fps-3x2": "16fps-3x2-startup",
     "16fps-portrait-3x4": "16fps-portrait-3x4-fast",
     "16fps-portrait": "16fps-portrait-startup",
+    "16fps-portrait-416x672": "16fps-portrait-416x672-startup",
+    "16fps-portrait-416x704": "16fps-portrait-416x704-startup",
+    "16fps-portrait-480x640": "16fps-portrait-480x640-startup",
+    "16fps-672x416": "16fps-672x416-startup",
+    "16fps-704x416": "16fps-704x416-startup",
+    "16fps-640x480": "16fps-640x480-startup",
     "20fps-hq": "20fps-hq-startup",
     "20fps-4x3-balanced": "20fps-4x3-balanced-startup",
     "24fps-fast": "24fps-fast-startup",
