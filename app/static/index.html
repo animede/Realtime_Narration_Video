@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Realtime Narration Video</title>
-  <link rel="stylesheet" href="/static/style.css?v=12">
+  <link rel="stylesheet" href="/static/style.css?v=13">
 </head>
 <body>
   <main>
@@ -167,7 +167,7 @@
       </form>
     </section>
     <section class="panel player-panel">
-      <div class="status-row"><span class="status-left"><button type="button" id="toggle-settings" class="panel-toggle" aria-label="設定パネルの表示切替">◀</button><span id="status" data-i18n="idle">待機中</span></span><span id="buffer"></span></div>
+      <div class="status-row"><span class="status-left"><button type="button" id="toggle-settings" class="panel-toggle" title="設定パネルを隠す" aria-label="設定パネルを隠す">◀</button><span id="status" data-i18n="idle">待機中</span></span><span id="buffer"></span></div>
       <div id="video-stack" class="video-stack">
         <img id="stage-character" class="stage-media" alt="設定したキャラクター" data-i18n-alt="configuredCharacter" hidden>
         <video id="stage-idle" class="stage-media stage-idle" muted autoplay playsinline preload="auto" aria-label="待機中のキャラクター" data-i18n-aria-label="idleCharacter" hidden></video>
@@ -187,6 +187,6 @@
       <ol id="chunks"></ol>
     </section>
   </main>
-  <script src="/static/app.js?v=46"></script>
+  <script src="/static/app.js?v=47"></script>
 </body>
 </html>
