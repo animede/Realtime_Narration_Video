@@ -33,7 +33,11 @@ input, textarea, select { width: 100%; border: 1px solid #35455f; border-radius:
 .input-panel.live-settings-error .live-setting > textarea { border-color: #ff7f91; }
 .setting-help { color: #8290a8; line-height: 1.45; }
 textarea { resize: vertical; }
-.options { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.options { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; }
+.options > * { grid-column: span 2; }
+/* 最終行(口動作強調・会話言語)だけ2分割 */
+.options > label:has(select[name="modality_scale_enabled"]),
+.options > label:has(select[name="conversation_language"]) { grid-column: span 3; }
 .drop-zone { position: relative; display: grid; place-items: center; min-height: 112px; overflow: hidden; border: 1px dashed #516785; border-radius: 12px; background: #0a1220; cursor: pointer; transition: border-color .16s, background .16s, transform .16s; }
 .drop-zone:hover, .drop-zone.drag-over { border-color: #68e4ff; background: #10233a; transform: translateY(-1px); }
 .drop-zone input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
@@ -74,4 +78,4 @@ button:disabled { opacity: .45; }
 #chunks li { padding: 5px 0; }
 #chunks .playable { color: #70e6ad; }
 #chunks .failed { color: #ff7f91; }
-@media (max-width: 820px) { main { grid-template-columns: 1fr; } .options { grid-template-columns: 1fr; } }
+@media (max-width: 820px) { main { grid-template-columns: 1fr; } .options { grid-template-columns: 1fr; } .options > * { grid-column: auto; } }
