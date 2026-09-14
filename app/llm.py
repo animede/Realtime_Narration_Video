@@ -42,10 +42,19 @@ def pop_speakable(buffer: str, force: bool = False, max_chars: int | None = None
         effective_guard = tail_guard_chars if tail_guard_chars is not None else (12 if english else 4)
         hard = re.search(r"[。！？!?.]\s*", buffer)
         soft = re.search(r"[、，,；;：:]\s*", buffer)
+        # 日本語の節境界: 直前がひらがなの読点(〜であり、/〜し、/〜が、など)。
+        # 名詞列挙の読点(内容、口調、感情、= 直前が漢字)では切らない
+        # (2026-09-14 ユーザー指定の分解粒度)。
+        clause = None if english else re.search(r"(?<=[\u3041-\u309f])[、，,]\s*", buffer)
+        clause_max = 48
         # Japanese question endings such as "ますか。" often arrive just after
         # max_chars.  Wait for a small look-ahead window so a one-character
         # suffix is not emitted as a separate speech/video chunk.
-        soft_ok = soft is not None and effective_min_soft <= soft.end() <= effective_max
+        if english:
+            soft_ok = soft is not None and effective_min_soft <= soft.end() <= effective_max
+        else:
+            soft = clause
+            soft_ok = clause is not None and effective_min_soft <= clause.end() <= clause_max
         if soft_ok and (hard is None or soft.end() < hard.end()):
             # A short greeting or introductory clause can start TTS before the
             # rest of the LLM response has arrived.

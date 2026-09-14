@@ -90,3 +90,17 @@ def test_english_stream_chunker_splits_on_word_boundary():
     assert parts[0][-1].isalpha()
     assert text.startswith(parts[0])
     assert not rest.startswith(" ")
+
+def test_clause_commas_split_but_enumeration_commas_do_not():
+    # 節境界(直前がひらがなの読点)で切り、名詞列挙の読点では切らない
+    # (2026-09-14 ユーザー指定の分解粒度)。
+    text = ("前者は入力されたパラメータを即座に映像化する能力であり、"
+            "後者は発話内容、口調、感情、相手との関係、直前の身体状態などを解釈し、"
+            "その場にふさわしい動作系列を新たに構成する能力です。")
+    parts, rest = pop_speakable(text, force=True)
+    assert parts == [
+        "前者は入力されたパラメータを即座に映像化する能力であり、",
+        "後者は発話内容、口調、感情、相手との関係、直前の身体状態などを解釈し、",
+        "その場にふさわしい動作系列を新たに構成する能力です。",
+    ]
+    assert rest == ""
