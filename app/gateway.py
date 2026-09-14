@@ -93,22 +93,33 @@ class GatewayClient:
     async def generate(self, image_id: str, audio_id: str, prompt: str, seed: int,
                        video_profile: str = "20fps-hq", steps: int = 8,
                        num_frames: int | None = None,
-                       modality_scale: float | None = None) -> dict:
+                       modality_scale: float | None = None,
+                       last_image_id: str | None = None,
+                       last_image_strength: float | None = None) -> dict:
         width, height, fps, frames = VIDEO_PROFILES[video_profile]
         frames = num_frames or frames
+        # A second image asset becomes an index=-1 condition on the gateway:
+        # the clip gets anchored to it at the final frame (FLF-style a2v).
+        asset_ids = [audio_id, image_id]
+        if last_image_id is not None:
+            asset_ids.append(last_image_id)
         body = {
             "backend": "ltx25",
             "mode": "a2v",
             "params": {"prompt": prompt, "width": width, "height": height,
                        "num_frames": frames, "fps": fps, "steps": steps,
                        "guidance_scale": 3.0, "seed": seed},
-            "asset_ids": [audio_id, image_id],
+            "asset_ids": asset_ids,
             "extra": {"upscale": False, "decoder": "vae", "audio_start": 0},
             "auto_load": True,
             "preset": self.preset,
         }
         if modality_scale is not None:
             body["extra"]["modality_scale"] = modality_scale
+        if last_image_id is not None and last_image_strength is not None:
+            # Override the tail anchor only; a full-strength (1.0) end anchor
+            # makes the model freeze the whole clip to guarantee the return.
+            body["extra"]["conditions"] = [{}, {"strength": last_image_strength}]
         async with httpx.AsyncClient(timeout=180) as client:
             response = await client.post(f"{self.base_url}/api/v1/generate", json=body)
             if response.is_error:

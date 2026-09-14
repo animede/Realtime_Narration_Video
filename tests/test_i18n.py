@@ -30,7 +30,11 @@ def test_browser_contains_bilingual_controls_and_persists_language():
     assert 'id="ui-language"' in html
     assert 'name="conversation_language"' in html
     assert 'name="action_level"' in html
+    assert 'name="video_instruction"' in html
+    assert 'name="idle_motion_profile"' in html
     assert "アクション量" in javascript
+    assert "動画への指示" in javascript
+    assert "アイドル動作（画像の構図）" in javascript
     assert "Action level" in javascript
     assert 'class="live-setting"' in html
     assert 'class="setup-setting"' in html

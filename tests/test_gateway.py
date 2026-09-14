@@ -61,7 +61,7 @@ def test_job_polling_is_low_latency_by_default():
 
 
 def test_gateway_generate_defaults_to_eight_steps():
-    assert GatewayClient.generate.__defaults__ == ("20fps-hq", 8, None, None)
+    assert GatewayClient.generate.__defaults__ == ("20fps-hq", 8, None, None, None, None)
 
 
 def test_video_prompt_contains_exact_spoken_text_and_articulation():
@@ -87,6 +87,19 @@ def test_action_level_changes_video_prompt_and_low_is_stable_default():
     assert len({low, medium, high}) == 3
 
 
+def test_video_instruction_is_prioritized_in_video_prompt():
+    session = NarrationSession(text="", voice_id=1)
+    assert session.video_instruction == ""
+
+    prompt = Orchestrator._prompt(
+        "こんにちは。", "スタジオ", action_level="low",
+        video_instruction="  右手を小さく上げて、最後に微笑む  ",
+    )
+
+    assert "右手を小さく上げて、最後に微笑む" in prompt
+    assert "takes priority over the general motion and scene guidance" in prompt
+
+
 def test_live_settings_update_without_repreparing_character(monkeypatch):
     session = NarrationSession(text="", voice_id=1)
     orchestrator.sessions[session.id] = session
@@ -96,7 +109,8 @@ def test_live_settings_update_without_repreparing_character(monkeypatch):
         result = asyncio.run(update_session_settings(
             session.id,
             SessionSettingsUpdate(
-                concept="  静かな部屋  ", action_level="high", video_seed=42,
+                concept="  静かな部屋  ", video_instruction="  最後に微笑む  ",
+                action_level="high", video_seed=42,
                 target_chunk_seconds=4.2,
             ),
         ))
@@ -105,6 +119,7 @@ def test_live_settings_update_without_repreparing_character(monkeypatch):
 
     assert result is session
     assert session.concept == "静かな部屋"
+    assert session.video_instruction == "最後に微笑む"
     assert session.action_level == "high"
     assert session.video_seed == 42
     assert session.target_chunk_seconds == 4.2

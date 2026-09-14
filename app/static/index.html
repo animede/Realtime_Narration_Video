@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Realtime Narration Video</title>
-  <link rel="stylesheet" href="/static/style.css?v=5">
+  <link rel="stylesheet" href="/static/style.css?v=7">
 </head>
 <body>
   <main>
@@ -32,6 +32,10 @@
           </span>
         </label>
         <label class="live-setting"><span data-i18n="sceneDirection">映像の方向性</span><input name="concept" placeholder="落ち着いたスタジオで説明する" data-i18n-placeholder="scenePlaceholder"></label>
+        <label class="live-setting"><span data-i18n="videoInstruction">動画への指示</span>
+          <textarea name="video_instruction" rows="3" maxlength="1000" placeholder="例：話の要点で小さくうなずき、最後に微笑む" data-i18n-placeholder="videoInstructionPlaceholder"></textarea>
+          <small class="setting-help" data-i18n="videoInstructionHint">次に生成する発話動画へ反映します。空欄なら自動生成します。</small>
+        </label>
         <label class="live-setting"><span data-i18n="actionLevel">アクション量</span>
           <select name="action_level">
             <option value="low" selected data-i18n="actionLow">少なめ（安定重視）</option>
@@ -49,8 +53,18 @@
           <select name="lip_sync_mode">
             <option value="natural" selected data-i18n="lipNatural">自然（閉口優先）</option>
             <option value="balanced" data-i18n="lipBalanced">バランス（軽い開口）</option>
+            <option value="medium" data-i18n="lipMedium">中間1（やや強い）</option>
+            <option value="medium_strong" data-i18n="lipMediumStrong">中間2（強め）</option>
             <option value="strong" data-i18n="lipStrong">強い口動作（大きい開口）</option>
           </select>
+        </label>
+        <label class="setup-setting"><span data-i18n="idleMotionProfile">アイドル動作（画像の構図）</span>
+          <select name="idle_motion_profile">
+            <option value="closeup" data-i18n="idleCloseup">顔アップ（自然な小動作）</option>
+            <option value="upper_body" data-i18n="idleUpperBody">上半身（動きを抑える）</option>
+            <option value="wide" selected data-i18n="idleWide">膝上・全身（安定重視）</option>
+          </select>
+          <small class="setting-help" data-i18n="idleMotionHint">画像内に写っている範囲を選択してください。キャラクター設定時に反映します。</small>
         </label>
         <label class="setup-setting"><span data-i18n="videoProfile">動画プロファイル</span>
           <select name="video_profile" id="video-profile">
@@ -84,8 +98,16 @@
         <div class="options">
           <label class="live-setting"><span data-i18n="speakerId">話者ID</span><input name="voice_id" type="number" value="888753760"></label>
           <label class="live-setting"><span data-i18n="videoSeed">動画seed</span><input name="video_seed" type="number" min="0" max="2147483647" step="1" value="1004"></label>
+          <button type="button" id="regenerate-idle" class="live-setting" data-i18n="regenerateIdle" hidden>待機動画を再生成</button>
           <label class="live-setting"><span data-i18n="chunkSeconds">チャンク秒数</span><input name="target_chunk_seconds" type="number" min="3.5" max="5" step="0.1" value="5"></label>
           <label class="live-setting"><span data-i18n="preloadCount">先読み数</span><input name="startup_buffer_chunks" type="number" min="1" max="5" value="1"></label>
+          <label class="live-setting"><span data-i18n="videoSteps">生成steps（後続動画）</span><input name="video_steps" type="number" min="1" max="12" step="1" value="4"></label>
+          <label class="live-setting"><span data-i18n="modalityScale">口動作強調（scale 1.3）</span>
+            <select name="modality_scale_enabled">
+              <option value="true" data-i18n="scaleOn">有効</option>
+              <option value="false" selected data-i18n="scaleOff">無効（高速）</option>
+            </select>
+          </label>
         </div>
         <button type="submit" data-i18n="setCharacter">キャラクターを設定</button>
       </form>
@@ -114,10 +136,11 @@
           <textarea id="narration-text" rows="2" placeholder="テキストを入力・貼り付け。Enterで送信、Shift+Enterで改行。" data-i18n-placeholder="messagePlaceholder"></textarea>
           <button type="submit" disabled data-i18n="send">送信</button>
         </div>
+        <small class="setting-help" data-i18n="inlineVideoInstructionHint">文頭に［手を上げながら］のように書くと、そのターンだけの動画指示になります。指示部分は読み上げません。</small>
       </form>
       <ol id="chunks"></ol>
     </section>
   </main>
-  <script src="/static/app.js?v=18"></script>
+  <script src="/static/app.js?v=23"></script>
 </body>
 </html>

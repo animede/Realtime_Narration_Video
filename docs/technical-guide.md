@@ -61,7 +61,8 @@ cp .env.example .env
 |---|---|
 | `character` | PNG、JPEG、WebP |
 | `character_mode` | `standard`または`photoreal` |
-| `lip_sync_mode` | `natural`、`balanced`、`strong` |
+| `lip_sync_mode` | `natural`、`balanced`、`medium`、`medium_strong`、`strong` |
+| `idle_motion_profile` | `closeup`、`upper_body`、`wide`（既定） |
 | `ui_language` | `ja`または`en`。画面表示に使用 |
 | `conversation_language` | `auto`、`ja`、`en`。LLM応答と文分割に使用 |
 | `video_profile` | UIで選択する公開プロファイル名 |
@@ -90,13 +91,13 @@ cp .env.example .env
 2. 条件用WAVを5.1秒まで無音パディング
 3. 選択プロファイルの本来の解像度で準備動画を生成
 4. 参照品質と開口成功を優先して8 steps、UI指定seed（既定1004）、`modality_scale=1.3`を使用
-5. 待機動画から閉口フレームを`character-neutral.png`として抽出
+5. 選択プロファイルと同じフル長の待機素材を、先頭と末尾の両方を入力画像に錨止め（FLF式a2v条件付け）して生成する。生成後に周縁（背景）基準のECCカメラロックでズーム等のカメラドリフトだけを機械的に固定し（被写体の瞬き・呼吸・揺れは残す）、末尾の重複アンカー1フレームを削って等速の単方向シームレスループにする。まれな自然な瞬きと口角の微動は許可する。ループ先頭から閉口フレームを`character-neutral.png`として抽出する。`POST /api/sessions/{id}/regenerate-idle`でseedを変えて待機動画だけを再生成できる（アンカー類は不変）
 6. 準備動画の0.12秒から軽い開口、0.75秒から大きい開口を抽出
-7. `character-speaking-balanced.png`と`character-speaking.png`として保存
+7. 開口度を調整する4段階の発話参照画像として保存
 
 FFmpegの`-ss`は入力指定後に置きます。入力前の高速シークでは、キーフレームが少ない短いMP4が先頭フレームへ戻る場合があります。
 
-待機画面には設定時に生成した短い往復ループ動画を表示し、各アンカーはLTXへの内部入力としてだけ使用します。アンカーは後続のフル解像度動画でも繰り返し参照するため、低解像度化しません。先頭動画だけが内部のstartupプロファイルを使用します。
+待機画面には設定時に生成したシームレスループ動画を表示し、各アンカーはLTXへの内部入力としてだけ使用します。アンカーは後続のフル解像度動画でも繰り返し参照するため、低解像度化しません。先頭動画だけが内部のstartupプロファイルを使用します。
 
 この方針はUIで選べる全11動画プロファイルに共通です。アンカー生成には常に選択プロファイルそのものを使い、startupプロファイルは会話ターンの先頭動画にだけ使います。384×512の実利用では低解像度アンカー版から解像感が改善し、口動作と約2.6秒の会話初動を両立しました。
 
@@ -187,6 +188,8 @@ LTXの空間寸法は256以上かつ32の倍数にします。フレーム数は
 | 標準 | 同一ターン内で前動画の最終フレームを連結 | 1000+チャンク番号 | なし | イラスト・3D、映像連続性 |
 | 実写・自然 | 毎回`character-neutral.png` | UI指定（既定1004） | 1.3 | 閉口と自然さを優先 |
 | 実写・バランス | 毎回`character-speaking-balanced.png` | UI指定（既定1004） | 1.3 | 軽い開口と口動作を両立 |
+| 実写・中間1 | 毎回`character-speaking-medium.png` | UI指定（既定1004） | 1.3 | バランスよりやや強い口動作 |
+| 実写・中間2 | 毎回`character-speaking-medium-strong.png` | UI指定（既定1004） | 1.3 | 強い設定に近い口動作 |
 | 実写・強い口動作 | 毎回`character-speaking.png` | UI指定（既定1004） | 1.3 | 口が動かない場合の最終手段 |
 
 旧`fast`値は既存セッションとの互換性のため受理し、大開口アンカー・scaleなしとして扱います。

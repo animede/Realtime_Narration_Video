@@ -52,12 +52,16 @@ class NarrationSession(BaseModel):
     status: SessionStatus = SessionStatus.QUEUED
     text: str
     concept: str = ""
+    video_instruction: str = ""
     action_level: str = "low"
     voice_id: int
     video_profile: str = "20fps-hq"
     character_mode: str = "standard"
     lip_sync_mode: str = "natural"
+    idle_motion_profile: str = "wide"
     video_seed: int = 1004
+    video_steps: int = 4
+    modality_scale_enabled: bool = False
     ui_language: str = "ja"
     conversation_language: str = "auto"
     target_chunk_seconds: float = 5.0

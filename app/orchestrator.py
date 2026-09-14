@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import shutil
+import subprocess
 from pathlib import Path
 from time import time
 
@@ -43,6 +45,18 @@ ACTION_DIRECTIONS = {
     ),
 }
 
+IDLE_MOTION_PROFILES = {
+    # Playback slowdown per composition. The loop spans the full clip: both
+    # ends are anchored to the input image (FLF-style a2v conditioning), so
+    # the clip is natively loopable and drift is forced to return home.
+    # Camera drift is cancelled mechanically (_lock_camera), so play at
+    # natural speed — slowing down reads as a lifeless character (2026-09-14
+    # 実測: raw動き2.2がスロー1.2-1.4で1.0前後まで目減りして見えた).
+    "closeup": 1.0,
+    "upper_body": 1.0,
+    "wide": 1.0,
+}
+
 
 def system_prompt(language: str) -> str:
     return {"ja": SYSTEM_PROMPT_JA, "en": SYSTEM_PROMPT_EN}.get(language, SYSTEM_PROMPT_AUTO)
@@ -58,9 +72,12 @@ class Orchestrator:
     def register(self, session: NarrationSession) -> None:
         self.sessions[session.id] = session
 
-    def chat(self, session: NarrationSession, character: Path) -> None:
+    def chat(self, session: NarrationSession, character: Path,
+             turn_video_instruction: str = "") -> None:
         self.sessions[session.id] = session
-        self.tasks[session.id] = asyncio.create_task(self._run_chat(session, character))
+        self.tasks[session.id] = asyncio.create_task(
+            self._run_chat(session, character, turn_video_instruction=turn_video_instruction)
+        )
 
     def narrate(self, session: NarrationSession, character: Path, text: str) -> None:
         """Speak supplied text directly without sending it to the LLM."""
@@ -80,6 +97,75 @@ class Orchestrator:
         temporary = folder / "session.json.tmp"
         temporary.write_text(session.model_dump_json(indent=2), encoding="utf-8")
         temporary.replace(folder / "session.json")
+
+    async def _build_idle_loop(self, session: NarrationSession, gateway: GatewayClient,
+                               folder: Path, character: Path) -> Path:
+        """Generate the FLF-anchored idle clip and turn it into the display loop."""
+        preparation_profile = session.video_profile
+        _, _, idle_fps, preparation_frames = VIDEO_PROFILES[preparation_profile]
+        idle_frames = preparation_frames
+        idle_condition = folder / "character-idle.wav"
+        idle_seconds = (idle_frames - 1) / idle_fps
+        idle_condition.write_bytes(silent_wav(idle_seconds + 0.2))
+        idle_image_id, idle_audio_id = await asyncio.gather(
+            gateway.upload(character), gateway.upload(idle_condition)
+        )
+        idle_result = await gateway.generate(
+            idle_image_id, idle_audio_id, last_image_id=idle_image_id,
+            prompt=
+            "Seamless idle loop of the same character waiting calmly in the same scene. The lips remain "
+            "naturally closed with no speaking or mouth articulation. The eyes stay open almost the whole "
+            "time; at most one soft, brief blink may occur. Allow subtle breathing and a relaxed expression "
+            "with faint mouth-corner micro-movement; the head and body remain nearly still. "
+            "No gestures, nodding, swaying, camera "
+            "movement, or scene change. Use a completely locked-off camera with "
+            "fixed focal length: zero zoom, dolly, reframing, or change in subject scale. Keep a calm, "
+            "consistent expression throughout. Preserve exact identity and pixel-consistent composition. "
+            "Finish in the same neutral pose as the first frame for a smooth loop.",
+            seed=session.video_seed, video_profile=preparation_profile,
+            steps=8, num_frames=idle_frames,
+        )
+        idle_raw = folder / "character-idle-raw.mp4"
+        await gateway.download(idle_result["result"]["video_url"], idle_raw)
+        # LTX leaves a slow zoom/translation drift on the clip even with a
+        # locked-off-camera prompt. Align every frame to the first frame
+        # (background-referenced affine) so the camera is truly fixed.
+        idle_locked = folder / "character-idle-locked.mp4"
+        await asyncio.to_thread(self._lock_camera, idle_raw, idle_locked)
+        idle_video = folder / "character-idle.mp4"
+        idle_slowdown = IDLE_MOTION_PROFILES.get(
+            session.idle_motion_profile, IDLE_MOTION_PROFILES["wide"]
+        )
+        # Both clip ends are anchored to the input image, so the full clip
+        # loops natively; shave one frame so the anchor pose is not shown
+        # twice at the loop point.
+        await self._make_seamless_loop(
+            idle_locked, idle_video,
+            duration_seconds=idle_seconds - 1.0 / idle_fps,
+            slowdown=idle_slowdown,
+        )
+        idle_raw.unlink(missing_ok=True)
+        idle_locked.unlink(missing_ok=True)
+        session.idle_video_url = f"/api/sessions/{session.id}/idle-video"
+        session.idle_video_ready_at = time()
+        return idle_video
+
+    async def regenerate_idle(self, session: NarrationSession) -> None:
+        """Rebuild only the idle loop (e.g. after a seed change).
+
+        The speaking anchors and the neutral reference stay untouched so the
+        conversational path is unaffected.
+        """
+        folder = self.settings.data_dir / session.id
+        candidates = [p for p in folder.glob("character.*")
+                      if p.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp"}]
+        if not candidates:
+            raise RuntimeError("キャラクター画像が見つかりません")
+        gateway = GatewayClient(self.settings.gateway_url, self.settings.gateway_preset,
+                                self.settings.poll_interval)
+        await gateway.load_backend()
+        await self._build_idle_loop(session, gateway, folder, candidates[0])
+        self.save(session)
 
     async def prepare_character(self, session: NarrationSession, character: Path) -> None:
         """Preload LTX and create idle video plus the photoreal speaking reference."""
@@ -101,39 +187,11 @@ class Orchestrator:
             folder = self.settings.data_dir / session.id
             preparation_profile = session.video_profile
             _, _, _, preparation_frames = VIDEO_PROFILES[preparation_profile]
-            # Generate roughly half a clip and append its reverse. This keeps the
-            # displayed loop short while guaranteeing that its last pose returns
-            # to the first pose instead of jumping at the browser loop boundary.
-            idle_frames = 8 * max(1, round((preparation_frames - 1) / 16)) + 1
-
-            idle_condition = folder / "character-idle.wav"
-            idle_seconds = (idle_frames - 1) / VIDEO_PROFILES[preparation_profile][2]
-            idle_condition.write_bytes(silent_wav(idle_seconds + 0.2))
-            idle_image_id, idle_audio_id = await asyncio.gather(
-                gateway.upload(character), gateway.upload(idle_condition)
-            )
-            idle_result = await gateway.generate(
-                idle_image_id, idle_audio_id,
-                "Seamless idle loop of the same character waiting calmly in the same scene. The lips remain "
-                "naturally closed with no speaking or mouth articulation. Only subtle breathing and occasional "
-                "gentle blinking; the head and body remain nearly still. No gestures, nodding, swaying, camera "
-                "movement, scene change, or facial-expression change. Keep the exact same calm expression "
-                "throughout. Preserve exact identity and composition. "
-                "Finish in the same neutral pose as the first frame for a smooth loop.",
-                session.video_seed, preparation_profile, 8, idle_frames,
-            )
-            idle_raw = folder / "character-idle-raw.mp4"
-            await gateway.download(idle_result["result"]["video_url"], idle_raw)
-            # The silent idle generation is a better closed-mouth source than the
-            # uploaded still when the latter already has parted lips or a smile.
-            await self._frame_at(
-                idle_raw, folder / "character-neutral.png", max(0.1, idle_seconds - 0.15)
-            )
-            idle_video = folder / "character-idle.mp4"
-            await self._make_ping_pong_loop(idle_raw, idle_video)
-            idle_raw.unlink(missing_ok=True)
-            session.idle_video_url = f"/api/sessions/{session.id}/idle-video"
-            session.idle_video_ready_at = time()
+            idle_video = await self._build_idle_loop(session, gateway, folder, character)
+            # Use the first displayed idle pose as the common closed-mouth source
+            # for natural speech and all articulation anchors.
+            neutral = folder / "character-neutral.png"
+            await self._frame_at(idle_video, neutral, 0.05)
             self.save(session)
 
             if speech_task is not None:
@@ -141,7 +199,7 @@ class Orchestrator:
                 condition = folder / "character-preparation.wav"
                 condition.write_bytes(pad_wav(wav, 5.1))
                 image_id, audio_id = await asyncio.gather(
-                    gateway.upload(character), gateway.upload(condition)
+                    gateway.upload(neutral), gateway.upload(condition)
                 )
                 # The speaking anchor is reused by every clip, including full-size
                 # follow-ups. Generate it at the selected resolution; only the first
@@ -156,9 +214,11 @@ class Orchestrator:
                 raw = folder / "character-preparation.mp4"
                 await gateway.download(result["result"]["video_url"], raw)
                 # Repeated vowels create a stable open-mouth interval at full
-                # resolution. Keep both a mild early articulation frame and the
-                # wide-open fallback so the UI can switch modes without re-preparing.
+                # resolution. Extract four progressively later articulation frames
+                # so the UI can finely tune mouth motion without another LTX job.
                 await self._frame_at(raw, folder / "character-speaking-balanced.png", 0.12)
+                await self._frame_at(raw, folder / "character-speaking-medium.png", 0.33)
+                await self._frame_at(raw, folder / "character-speaking-medium-strong.png", 0.54)
                 await self._frame_at(raw, folder / "character-speaking.png", 0.75)
                 raw.unlink(missing_ok=True)
             session.character_prepared = True
@@ -172,7 +232,8 @@ class Orchestrator:
             raise
 
     async def _run_chat(self, session: NarrationSession, character: Path,
-                        narration_text: str | None = None) -> None:
+                        narration_text: str | None = None,
+                        turn_video_instruction: str = "") -> None:
         folder = self.settings.data_dir / session.id
         gateway = GatewayClient(self.settings.gateway_url, self.settings.gateway_preset,
                                 self.settings.poll_interval)
@@ -258,13 +319,24 @@ class Orchestrator:
                 candidates = {
                     "natural": folder / "character-neutral.png",
                     "balanced": folder / "character-speaking-balanced.png",
+                    "medium": folder / "character-speaking-medium.png",
+                    "medium_strong": folder / "character-speaking-medium-strong.png",
                     "strong": folder / "character-speaking.png",
                     # Backward compatibility for sessions created before the
                     # natural/balanced/strong modes were introduced.
                     "fast": folder / "character-speaking.png",
                 }
                 selected = candidates.get(session.lip_sync_mode, candidates["natural"])
-                return selected if selected.is_file() else character
+                if selected.is_file():
+                    return selected
+                # Sessions prepared before the intermediate modes were added do
+                # not have their two extra anchor images yet.
+                legacy_fallbacks = {
+                    "medium": candidates["balanced"],
+                    "medium_strong": candidates["strong"],
+                }
+                fallback = legacy_fallbacks.get(session.lip_sync_mode)
+                return fallback if fallback is not None and fallback.is_file() else character
 
             while True:
                 chunk = await video_queue.get()
@@ -282,14 +354,19 @@ class Orchestrator:
                 condition_audio = folder / f"chunk-{chunk.index:03}-condition.wav"
                 audio_id = await gateway.upload(condition_audio)
                 actual_profile = generation_profile(session.video_profile, first_video_of_turn)
-                actual_steps = 4 if first_video_of_turn else 8
+                actual_steps = (
+                    min(4, session.video_steps) if first_video_of_turn else session.video_steps
+                )
                 # Keep photoreal motion reproducible with the selected seed. Standard
                 # mode offsets each chunk so chained clips do not repeat the same motion.
                 actual_seed = session.video_seed if session.character_mode == "photoreal" else session.video_seed + chunk.index
                 actual_modality_scale = (
                     1.3
-                    if session.character_mode == "photoreal"
-                    and session.lip_sync_mode in {"natural", "balanced", "strong"}
+                    if session.modality_scale_enabled
+                    and session.character_mode == "photoreal"
+                    and session.lip_sync_mode in {
+                        "natural", "balanced", "medium", "medium_strong", "strong"
+                    }
                     else None
                 )
                 _, _, _, profile_frames = VIDEO_PROFILES[actual_profile]
@@ -302,7 +379,8 @@ class Orchestrator:
                 chunk.modality_scale = actual_modality_scale
                 result = await gateway.generate(
                     image_id, audio_id, self._prompt(
-                        chunk.text, session.concept, session.character_mode, session.action_level
+                        chunk.text, session.concept, session.character_mode, session.action_level,
+                        session.video_instruction, turn_video_instruction,
                     ),
                     actual_seed, actual_profile, actual_steps, actual_frames,
                     actual_modality_scale,
@@ -405,10 +483,26 @@ class Orchestrator:
 
     @staticmethod
     def _prompt(text: str, concept: str, character_mode: str = "photoreal",
-                action_level: str = "low") -> str:
+                action_level: str = "low", video_instruction: str = "",
+                turn_video_instruction: str = "") -> str:
         setting = concept.strip() or "a calm, clean studio background"
         spoken_text = " ".join(text.split())[:300]
         action_direction = ACTION_DIRECTIONS.get(action_level, ACTION_DIRECTIONS["low"])
+        standing_instruction = " ".join(video_instruction.split())[:1000]
+        turn_instruction = " ".join(turn_video_instruction.split())[:1000]
+        directed_parts: list[str] = []
+        if standing_instruction:
+            directed_parts.append(
+                "Follow this standing user video instruction while preserving identity, the visible face, lip "
+                "synchronization, and stable continuity. It takes priority over the general motion and scene "
+                f"guidance: {standing_instruction}."
+            )
+        if turn_instruction:
+            directed_parts.append(
+                "For this turn, follow this inline video instruction precisely. It takes priority over the "
+                f"standing instruction and the general motion and scene guidance: {turn_instruction}."
+            )
+        directed_action = f" {' '.join(directed_parts)}" if directed_parts else ""
         mouth_rest = (
             "Mouth movement is only for articulating the narration; do not hold an open-mouth expression. "
             "During silent intervals, the lips rest naturally together. "
@@ -419,18 +513,20 @@ class Orchestrator:
                 "The full face and unobstructed mouth stay clearly visible. Natural lip and jaw movement follows "
                 f"the supplied narration audio. {mouth_rest}{action_direction} "
                 "Stable camera and consistent identity. "
-                f'Scene direction: {setting}. The character says: "{spoken_text}".'
+                f'Scene direction: {setting}.{directed_action} The character says: "{spoken_text}".'
             )
         return (
             f'The character says exactly: "{spoken_text}". '
             "Clearly and continuously articulate every spoken syllable, with visible rhythmic mouth opening "
             "and closing synchronized to the supplied speech audio. The mouth must not remain closed while "
             "speaking. After the supplied speech ends, stop articulating and naturally return the lips to a "
-            f"relaxed closed position for the remaining silence. {mouth_rest}"
+            "relaxed closed position for the remaining silence. Smoothly return the head, body, and calm "
+            f"expression to the input reference pose in the final frames. {mouth_rest}"
             "Medium close-up of the same character, "
             "front-facing or three-quarter view. The full "
             "face, lips, teeth, and jaw remain unobstructed and clearly visible. Preserve identity, with subtle "
             f"blinking and breathing, and a stable camera. {action_direction} Scene direction: {setting}."
+            f"{directed_action}"
         )
 
     @staticmethod
@@ -454,14 +550,102 @@ class Orchestrator:
             raise RuntimeError(f"発話用フレーム抽出に失敗しました: {stderr.decode()[-500:]}")
 
     @staticmethod
-    async def _make_ping_pong_loop(video: Path, target: Path) -> None:
+    def _lock_camera(video: Path, target: Path) -> None:
+        """Warp every frame onto the first frame to cancel camera drift.
+
+        Estimates a dense affine alignment of every frame against frame 0
+        with ECC on downscaled, blurred luma, restricted to the frame border
+        (the centre is masked out): the border is background, so the fit
+        captures the camera component only and the subject's own sway,
+        blinks, and breathing survive the correction (2026-09-14 実測:
+        全面推定は被写体の動きまで2.19→1.2に削っていた。周縁マスクで1.7を保持
+        しつつ背景の残留ズームは0.08%). Warm-starts each frame from the
+        previous solution; the inverse warp pins the camera to frame 0. A
+        small fixed crop-zoom hides the replicated warp borders. Runs in a
+        worker thread; frames pass through unwarped when ECC fails.
+        """
+        import cv2
+        import numpy as np
+
+        capture = cv2.VideoCapture(str(video))
+        frames = []
+        while True:
+            ok, frame = capture.read()
+            if not ok:
+                break
+            frames.append(frame)
+        fps = capture.get(cv2.CAP_PROP_FPS) or 16.0
+        capture.release()
+        if len(frames) < 2:
+            shutil.copyfile(video, target)
+            return
+        height, width = frames[0].shape[:2]
+        scale = 0.25
+
+        def small_luma(frame):
+            luma = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            luma = cv2.resize(luma, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
+            return cv2.GaussianBlur(luma, (5, 5), 0).astype(np.float32)
+
+        reference = small_luma(frames[0])
+        small_h, small_w = reference.shape
+        border_mask = np.ones((small_h, small_w), np.uint8)
+        border_mask[int(small_h * 0.15):int(small_h * 0.85),
+                    int(small_w * 0.2):int(small_w * 0.8)] = 0
+        criteria = (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 80, 1e-5)
+        margin = 0.02
+        crop = np.array([
+            [1 + 2 * margin, 0, -margin * width],
+            [0, 1 + 2 * margin, -margin * height],
+            [0, 0, 1],
+        ], dtype=np.float64)
+        warp = np.eye(2, 3, dtype=np.float32)
+        encoder = subprocess.Popen(
+            ["ffmpeg", "-y", "-v", "error", "-f", "rawvideo", "-pix_fmt", "bgr24",
+             "-s", f"{width}x{height}", "-r", f"{fps}", "-i", "-",
+             "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
+             "-pix_fmt", "yuv420p", str(target)],
+            stdin=subprocess.PIPE,
+        )
+        try:
+            for index, frame in enumerate(frames):
+                if index:
+                    try:
+                        _, warp = cv2.findTransformECC(
+                            reference, small_luma(frame), warp.copy(),
+                            cv2.MOTION_AFFINE, criteria, border_mask, 5)
+                    except cv2.error:
+                        pass  # keep the previous warp — drift changes slowly
+                # Rescale the low-resolution translation to full resolution.
+                full = np.vstack([warp, [0, 0, 1]]).astype(np.float64)
+                full[:2, 2] /= scale
+                correction = crop @ np.linalg.inv(full)
+                warped = cv2.warpAffine(frame, correction[:2], (width, height),
+                                        flags=cv2.INTER_LANCZOS4,
+                                        borderMode=cv2.BORDER_REPLICATE)
+                encoder.stdin.write(warped.tobytes())
+        finally:
+            encoder.stdin.close()
+            encoder.wait()
+        if encoder.returncode:
+            shutil.copyfile(video, target)
+
+    @staticmethod
+    async def _make_seamless_loop(video: Path, target: Path,
+                                  duration_seconds: float | None = None,
+                                  slowdown: float = 1.0) -> None:
+        """Re-encode a natively loopable clip (FLF-anchored ends) for display.
+
+        Trims the duplicated anchor pose off the tail and optionally slows
+        playback. No ping-pong: the reverse pass used to mirror every blink
+        and turn residual drift into a visible in/out oscillation.
+        """
+        duration = "" if duration_seconds is None else f":duration={max(0.05, duration_seconds):.3f}"
+        speed = max(1.0, slowdown)
         process = await asyncio.create_subprocess_exec(
             "ffmpeg", "-y", "-v", "error", "-i", str(video),
             "-filter_complex",
-            "[0:v]split[forward][backward];"
-            "[forward]setpts=PTS-STARTPTS[f];"
-            "[backward]reverse,setpts=PTS-STARTPTS[r];"
-            "[f][r]concat=n=2:v=1:a=0,format=yuv420p[out]",
+            f"[0:v]trim=start=0{duration},setpts={speed:.3f}*(PTS-STARTPTS),format=yuv420p[out]",
             "-map", "[out]", "-an", "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
             "-movflags", "+faststart", str(target), stderr=asyncio.subprocess.PIPE,
         )

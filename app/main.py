@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 import shutil
 from pathlib import Path
 
@@ -20,6 +21,22 @@ app = FastAPI(title="Realtime Narration Video", version="0.1.0")
 orchestrator = Orchestrator(settings)
 static_dir = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=static_dir), name="static")
+
+LEADING_VIDEO_INSTRUCTION = re.compile(
+    r"^\s*[\[［]([^\]\］\r\n]+)[\]］]\s*"
+)
+
+
+def extract_leading_video_instruction(value: str) -> tuple[str, str]:
+    """Separate consecutive leading [video directions] from a chat message."""
+    remaining = value
+    instructions: list[str] = []
+    while match := LEADING_VIDEO_INSTRUCTION.match(remaining):
+        instruction = " ".join(match.group(1).split())
+        if instruction:
+            instructions.append(instruction)
+        remaining = remaining[match.end():]
+    return remaining.strip(), " ".join(instructions)
 
 
 @app.get("/")
@@ -53,12 +70,16 @@ async def healthz():
 async def create_session(
     text: str = Form(""),
     concept: str = Form(""),
+    video_instruction: str = Form(""),
     action_level: str = Form("low"),
     voice_id: int = Form(settings.tts_speaker_id),
     video_profile: str = Form("20fps-hq"),
     character_mode: str = Form("standard"),
     lip_sync_mode: str = Form("natural"),
+    idle_motion_profile: str = Form("wide"),
     video_seed: int = Form(1004),
+    video_steps: int = Form(4),
+    modality_scale_enabled: bool = Form(False),
     ui_language: str = Form("ja"),
     conversation_language: str = Form("auto"),
     target_chunk_seconds: float = Form(settings.target_chunk_seconds),
@@ -68,6 +89,9 @@ async def create_session(
     cleaned = text.strip()
     if len(cleaned) > 20_000:
         raise HTTPException(400, "テキストは20,000文字以内にしてください")
+    cleaned_video_instruction = video_instruction.strip()
+    if len(cleaned_video_instruction) > 1_000:
+        raise HTTPException(400, "動画への指示は1,000文字以内にしてください")
     if not 3.5 <= target_chunk_seconds <= 5.0:
         raise HTTPException(400, "チャンク目標時間は3.5～5.0秒にしてください")
     if not 1 <= startup_buffer_chunks <= 5:
@@ -78,18 +102,25 @@ async def create_session(
         raise HTTPException(400, "キャラクター種別が不正です")
     if action_level not in {"low", "medium", "high"}:
         raise HTTPException(400, "アクション量が不正です")
-    if lip_sync_mode not in {"natural", "balanced", "strong", "fast"}:
+    if lip_sync_mode not in {"natural", "balanced", "medium", "medium_strong", "strong", "fast"}:
         raise HTTPException(400, "リップシンク設定が不正です")
+    if idle_motion_profile not in {"closeup", "upper_body", "wide"}:
+        raise HTTPException(400, "アイドル動作設定が不正です")
     if not 0 <= video_seed <= 2_147_483_647:
         raise HTTPException(400, "seedは0～2147483647で指定してください")
+    if not 1 <= video_steps <= 12:
+        raise HTTPException(400, "stepsは1～12にしてください")
     if ui_language not in {"ja", "en"}:
         raise HTTPException(400, "UI言語が不正です")
     if conversation_language not in {"auto", "ja", "en"}:
         raise HTTPException(400, "会話言語が不正です")
     session = NarrationSession(
-        text=cleaned, concept=concept.strip(), action_level=action_level,
+        text=cleaned, concept=concept.strip(), video_instruction=cleaned_video_instruction,
+        action_level=action_level,
         voice_id=voice_id, video_profile=video_profile,
-        character_mode=character_mode, lip_sync_mode=lip_sync_mode, video_seed=video_seed,
+        character_mode=character_mode, lip_sync_mode=lip_sync_mode,
+        idle_motion_profile=idle_motion_profile, video_seed=video_seed,
+        video_steps=video_steps, modality_scale_enabled=modality_scale_enabled,
         ui_language=ui_language, conversation_language=conversation_language,
         target_chunk_seconds=target_chunk_seconds,
         startup_buffer_chunks=startup_buffer_chunks,
@@ -120,11 +151,14 @@ class ChatRequest(BaseModel):
 
 class SessionSettingsUpdate(BaseModel):
     concept: str | None = None
+    video_instruction: str | None = None
     action_level: str | None = None
     lip_sync_mode: str | None = None
     conversation_language: str | None = None
     voice_id: int | None = None
     video_seed: int | None = None
+    video_steps: int | None = None
+    modality_scale_enabled: bool | None = None
     target_chunk_seconds: float | None = None
     startup_buffer_chunks: int | None = None
 
@@ -135,21 +169,43 @@ async def update_session_settings(session_id: str, request: SessionSettingsUpdat
     values = request.model_dump(exclude_none=True)
     if "action_level" in values and values["action_level"] not in {"low", "medium", "high"}:
         raise HTTPException(400, "アクション量が不正です")
-    if "lip_sync_mode" in values and values["lip_sync_mode"] not in {"natural", "balanced", "strong", "fast"}:
+    if "lip_sync_mode" in values and values["lip_sync_mode"] not in {
+        "natural", "balanced", "medium", "medium_strong", "strong", "fast"
+    }:
         raise HTTPException(400, "リップシンク設定が不正です")
     if "conversation_language" in values and values["conversation_language"] not in {"auto", "ja", "en"}:
         raise HTTPException(400, "会話言語が不正です")
     if "video_seed" in values and not 0 <= values["video_seed"] <= 2_147_483_647:
         raise HTTPException(400, "seedは0～2147483647で指定してください")
+    if "video_steps" in values and not 1 <= values["video_steps"] <= 12:
+        raise HTTPException(400, "stepsは1～12にしてください")
     if "target_chunk_seconds" in values and not 3.5 <= values["target_chunk_seconds"] <= 5.0:
         raise HTTPException(400, "チャンク目標時間は3.5～5.0秒にしてください")
     if "startup_buffer_chunks" in values and not 1 <= values["startup_buffer_chunks"] <= 5:
         raise HTTPException(400, "先読みチャンク数は1～5にしてください")
+    if "video_instruction" in values and len(values["video_instruction"].strip()) > 1_000:
+        raise HTTPException(400, "動画への指示は1,000文字以内にしてください")
     if "concept" in values:
         values["concept"] = values["concept"].strip()
+    if "video_instruction" in values:
+        values["video_instruction"] = values["video_instruction"].strip()
     for name, value in values.items():
         setattr(session, name, value)
     orchestrator.save(session)
+    return session
+
+
+@app.post("/api/sessions/{session_id}/regenerate-idle", response_model=NarrationSession)
+async def regenerate_idle(session_id: str):
+    session = get_session_or_404(session_id)
+    if orchestrator.is_running(session_id):
+        raise HTTPException(409, "応答の生成中は待機動画を再生成できません")
+    if not session.character_prepared:
+        raise HTTPException(400, "先にキャラクターを設定してください")
+    try:
+        await orchestrator.regenerate_idle(session)
+    except Exception as exc:
+        raise HTTPException(502, f"待機動画の再生成に失敗しました: {exc}") from exc
     return session
 
 
@@ -158,11 +214,14 @@ async def send_message(session_id: str, request: ChatRequest):
     session = get_session_or_404(session_id)
     if orchestrator.is_running(session_id):
         raise HTTPException(409, "前の応答を生成中です")
-    text = request.text.strip()
-    if not text:
-        raise HTTPException(400, "メッセージを入力してください")
-    if len(text) > 8_000:
+    raw_text = request.text.strip()
+    if len(raw_text) > 8_000:
         raise HTTPException(400, "メッセージは8,000文字以内にしてください")
+    text, turn_video_instruction = extract_leading_video_instruction(raw_text)
+    if not text:
+        raise HTTPException(400, "動画指示に続けてメッセージを入力してください")
+    if len(turn_video_instruction) > 1_000:
+        raise HTTPException(400, "角括弧内の動画指示は合計1,000文字以内にしてください")
     folder = settings.data_dir / session.id
     character = next(iter(folder.glob("character.*")), None)
     if character is None:
@@ -172,7 +231,7 @@ async def send_message(session_id: str, request: ChatRequest):
     session.error = None
     session.messages.append(ChatMessage(role="user", content=text))
     orchestrator.save(session)
-    orchestrator.chat(session, character)
+    orchestrator.chat(session, character, turn_video_instruction)
     return session
 
 

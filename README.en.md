@@ -35,9 +35,9 @@ The video was compressed for GitHub and therefore looks slightly worse than the 
 - Playback starts with one available chunk; two alternating video elements preload the next clip
 - Dynamic startup buffering and measured transition-gap display
 - Short utterances are generated as five-second clips and advance after speech when the next clip is ready. Speech longer than five seconds keeps the final video frame visible while the original TTS audio finishes
-- The first clip of every turn uses a lower resolution with the same framing and four steps; later clips use the selected resolution and eight steps
+- The first clip of every turn uses a lower resolution with the same framing; later clips use the selected resolution. Steps are configurable in the UI (default 4; the first clip uses `min(4, steps)`)
 - Seed 1004, the most reliable observed photorealistic articulation seed, is the default and can be changed in the UI for every photorealistic chunk
-- Photorealistic fast mode uses `modality_scale=1.3` only while preparing the anchor; Strong Lip Motion also applies it during conversation
+- Photorealistic anchor preparation always uses `modality_scale=1.3`; applying it during conversation is a UI toggle ("Mouth emphasis", default off for speed — distilled 4-step generation was verified to keep mouth articulation)
 - At the beginning of each turn, the original character image covers the previous turn until the new video starts
 - User-selectable generation policy: Standard varies each chunk from the selected base seed and chains frames within a turn; Photorealistic reuses the speaking anchor and selected seed
 - Gateway jobs are polled every 100 ms
@@ -79,6 +79,7 @@ The Gateway manages backends exclusively. Unmanaged H3/LTX processes on ports 86
 - `POST /api/sessions` — submit the character, text, concept, and settings as multipart data
 - `POST /api/sessions/{id}/messages` — submit a user message and start streaming generation
 - `POST /api/sessions/{id}/narrations` — split and narrate supplied text directly without the LLM
+- `POST /api/sessions/{id}/regenerate-idle` — rebuild only the idle loop video with the current seed
 - `GET /api/sessions/{id}` — retrieve session and chunk status
 - `DELETE /api/sessions/{id}` — cancel after the current chunk finishes
 - `GET /api/sessions/{id}/chunks/{index}/video` — retrieve the MP4 with replaced audio

@@ -55,7 +55,8 @@ Default endpoints use localhost. Keep credentials and deployment addresses only 
 |---|---|
 | `character` | PNG, JPEG, or WebP |
 | `character_mode` | `standard` or `photoreal` |
-| `lip_sync_mode` | `natural`, `balanced`, or `strong` |
+| `lip_sync_mode` | `natural`, `balanced`, `medium`, `medium_strong`, or `strong` |
+| `idle_motion_profile` | `closeup`, `upper_body`, or `wide` (default) |
 | `ui_language` | `ja` or `en`; controls display text |
 | `conversation_language` | `auto`, `ja`, or `en`; controls LLM output and segmentation |
 | `video_profile` | Public profile selected in the UI |
@@ -84,13 +85,13 @@ Registration therefore performs the following preparation:
 2. Pad the conditioning WAV with silence to 5.1 seconds.
 3. Generate a preparation video at the selected profile's native resolution.
 4. Prefer reference quality and successful mouth opening by using eight steps, the UI-selected seed (default 1004), and `modality_scale=1.3`.
-5. Extract a closed-mouth `character-neutral.png` frame from the idle generation.
+5. Generate a full-length idle source at the selected profile with both ends anchored to the input image (FLF-style a2v conditioning). A border-referenced ECC camera lock then mechanically cancels camera drift such as slow zoom (subject blinks, breathing, and sway survive), the duplicated tail anchor frame is trimmed, and the clip plays as a natural-speed one-way seamless loop. Rare natural blinks and faint mouth-corner motion are allowed. The closed-mouth `character-neutral.png` is extracted from the loop start. `POST /api/sessions/{id}/regenerate-idle` rebuilds only the idle loop with the current seed (anchors stay untouched).
 6. Extract mild and wide articulation frames at 0.12 and 0.75 seconds.
-7. Save them as `character-speaking-balanced.png` and `character-speaking.png`.
+7. Save four progressively stronger articulation reference frames.
 
 Place FFmpeg's `-ss` after the input. Fast seeking before the input can return to the first frame for short MP4 files with sparse keyframes.
 
-The waiting screen shows a short ping-pong idle loop generated during setup. Speaking anchors are only internal LTX inputs. Because they are reused by full-resolution follow-up clips, they are not generated at the reduced startup resolution. This policy applies to all 11 public profiles: anchor preparation uses the selected profile; only the first conversational clip uses its startup profile.
+The waiting screen shows a seamless idle loop generated during setup. Speaking anchors are only internal LTX inputs. Because they are reused by full-resolution follow-up clips, they are not generated at the reduced startup resolution. This policy applies to all 11 public profiles: anchor preparation uses the selected profile; only the first conversational clip uses its startup profile.
 
 In a 384×512 test, the full-resolution anchor improved facial, mouth, and hair detail over a low-resolution anchor while retaining mouth motion and an approximately 2.6-second first response.
 
@@ -181,6 +182,8 @@ LTX spatial dimensions must be at least 256 and divisible by 32. Frame counts mu
 | Standard | Previous clip's final frame within a turn | 1000 + chunk index | None | Illustration/3D and visual continuity |
 | Photorealistic/Natural | `character-neutral.png` for every clip | UI-selected (default 1004) | 1.3 | Prefer natural closure |
 | Photorealistic/Balanced | `character-speaking-balanced.png` for every clip | UI-selected (default 1004) | 1.3 | Mild opening with reliable motion |
+| Photorealistic/Intermediate 1 | `character-speaking-medium.png` for every clip | UI-selected (default 1004) | 1.3 | Moderately stronger than Balanced |
+| Photorealistic/Intermediate 2 | `character-speaking-medium-strong.png` for every clip | UI-selected (default 1004) | 1.3 | Closer to the Strong setting |
 | Photorealistic/Strong | `character-speaking.png` for every clip | UI-selected (default 1004) | 1.3 | Last-resort articulation strength |
 
 The legacy `fast` value remains accepted for saved-session compatibility and uses the wide anchor without conversation scale.

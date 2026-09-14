@@ -27,11 +27,17 @@ const messages = {
     uiLanguage: "表示言語", tagline: "文章を約5秒ずつ音声化し、生成できた映像から順番に再生します。",
     characterImage: "キャラクター画像", characterPreview: "キャラクタープレビュー", dropImage: "画像をドロップ",
     dropImageHint: "PNG・JPEG・WebP／クリックして選択", sceneDirection: "映像の方向性",
-    scenePlaceholder: "落ち着いたスタジオで説明する", actionLevel: "アクション量",
+    scenePlaceholder: "落ち着いたスタジオで説明する", videoInstruction: "動画への指示",
+    videoInstructionPlaceholder: "例：話の要点で小さくうなずき、最後に微笑む",
+    videoInstructionHint: "次に生成する発話動画へ反映します。空欄なら自動生成します。", actionLevel: "アクション量",
     actionLow: "少なめ（安定重視）", actionMedium: "標準", actionHigh: "多め（表現重視）", characterType: "キャラクター種別",
     characterStandard: "標準（イラスト・3D）", characterPhotoreal: "実写・口動作優先",
     lipSetting: "実写の発話設定", lipNatural: "自然（閉口優先）",
-    lipBalanced: "バランス（軽い開口）", lipStrong: "強い口動作（大きい開口）", videoProfile: "動画プロファイル",
+    lipBalanced: "バランス（軽い開口）", lipMedium: "中間1（やや強い）",
+    lipMediumStrong: "中間2（強め）", lipStrong: "強い口動作（大きい開口）", videoProfile: "動画プロファイル",
+    idleMotionProfile: "アイドル動作（画像の構図）", idleCloseup: "顔アップ（自然な小動作）",
+    idleUpperBody: "上半身（動きを抑える）", idleWide: "膝上・全身（安定重視）",
+    idleMotionHint: "画像内に写っている範囲を選択してください。キャラクター設定時に反映します。",
     profile16: "16fps・解像度優先", profile20: "20fps・バランス", profile24: "24fps・動き優先",
     profilePeople: "640×384（5:3 人物向け）", profileStable: "576×384（3:2 安定）",
     profilePortrait34: "384×512（3:4 縦型）", profilePortrait35: "384×640（3:5 縦型・実験）",
@@ -39,11 +45,14 @@ const messages = {
     conversationLanguage: "会話言語", languageAuto: "自動（入力に合わせる）", languageJapanese: "日本語",
     languageEnglish: "英語", liveSettingHint: "緑枠：次の生成から即時反映", setupSettingHint: "黄枠：設定ボタンで反映",
     speakerId: "話者ID", videoSeed: "動画seed", chunkSeconds: "チャンク秒数", preloadCount: "先読み数",
+    videoSteps: "生成steps（後続動画）", modalityScale: "口動作強調（scale 1.3）", scaleOn: "有効", scaleOff: "無効（高速）",
+    regenerateIdle: "待機動画を再生成", regeneratingIdle: "待機動画を生成中（seedを変えてガチャできます）",
     setCharacter: "キャラクターを設定", updateSettings: "設定を更新", configured: "設定済み", idleCharacter: "待機中のキャラクター",
     narrationLabel: "朗読させたい文章", narrationPlaceholder: "文章を入力・貼り付け、またはTXTファイルをドロップ",
     selectTextFile: "TXTを選択", narrate: "朗読", idle: "待機中", configuredCharacter: "設定したキャラクター",
     captionPlaceholder: "生成を開始すると、ここに読み上げ内容が表示されます。",
     messagePlaceholder: "テキストを入力・貼り付け。Enterで送信、Shift+Enterで改行。", send: "送信",
+    inlineVideoInstructionHint: "文頭に［手を上げながら］のように書くと、そのターンだけの動画指示になります。指示部分は読み上げません。",
     queued: "チャット入力待ち", preparing: "キャラクターを準備中", chatting: "Gemma 4が応答中",
     synthesizing: "音声を合成中", generating: "映像を生成中", playable: "再生可能", completed: "生成完了",
     failed: "エラー", cancelled: "キャンセル済み", preparingModel: "モデルと発話用画像を準備中",
@@ -58,11 +67,17 @@ const messages = {
     uiLanguage: "Display language", tagline: "Speech is generated in roughly five-second chunks and completed videos play in order.",
     characterImage: "Character image", characterPreview: "Character preview", dropImage: "Drop an image",
     dropImageHint: "PNG, JPEG, or WebP / click to select", sceneDirection: "Scene direction",
-    scenePlaceholder: "Explain in a calm studio", actionLevel: "Action level",
+    scenePlaceholder: "Explain in a calm studio", videoInstruction: "Video instruction",
+    videoInstructionPlaceholder: "Example: Nod slightly at key points, then smile at the end",
+    videoInstructionHint: "Applies to the next speaking video. Leave blank for automatic motion.", actionLevel: "Action level",
     actionLow: "Low (prioritize stability)", actionMedium: "Medium", actionHigh: "High (more expressive)", characterType: "Character type",
     characterStandard: "Standard (illustration / 3D)", characterPhotoreal: "Photorealistic / lip motion",
     lipSetting: "Photorealistic speech", lipNatural: "Natural (prefer closed mouth)",
-    lipBalanced: "Balanced (slightly open)", lipStrong: "Strong lip motion (wide open)", videoProfile: "Video profile",
+    lipBalanced: "Balanced (slightly open)", lipMedium: "Intermediate 1 (moderate)",
+    lipMediumStrong: "Intermediate 2 (stronger)", lipStrong: "Strong lip motion (wide open)", videoProfile: "Video profile",
+    idleMotionProfile: "Idle motion (image framing)", idleCloseup: "Face close-up (natural subtle motion)",
+    idleUpperBody: "Upper body (reduced motion)", idleWide: "Knee-up / full body (most stable)",
+    idleMotionHint: "Choose how much of the character is visible. Applied when setting the character.",
     profile16: "16 fps / resolution", profile20: "20 fps / balanced", profile24: "24 fps / motion",
     profilePeople: "640×384 (5:3 / people)", profileStable: "576×384 (3:2 / stable)",
     profilePortrait34: "384×512 (3:4 portrait)", profilePortrait35: "384×640 (3:5 portrait / experimental)",
@@ -70,11 +85,14 @@ const messages = {
     conversationLanguage: "Conversation language", languageAuto: "Auto (match input)", languageJapanese: "Japanese",
     languageEnglish: "English", liveSettingHint: "Green: applies to the next generation", setupSettingHint: "Yellow: use the settings button",
     speakerId: "Speaker ID", videoSeed: "Video seed", chunkSeconds: "Chunk seconds", preloadCount: "Startup buffer",
+    videoSteps: "Video steps (follow-up)", modalityScale: "Mouth emphasis (scale 1.3)", scaleOn: "Enabled", scaleOff: "Disabled (fast)",
+    regenerateIdle: "Regenerate idle video", regeneratingIdle: "Regenerating the idle video (change the seed to reroll)",
     setCharacter: "Set character", updateSettings: "Update settings", configured: "Configured", idleCharacter: "Idle character",
     narrationLabel: "Text to narrate", narrationPlaceholder: "Type or paste text, or drop a TXT file",
     selectTextFile: "Choose TXT", narrate: "Narrate", idle: "Idle", configuredCharacter: "Configured character",
     captionPlaceholder: "Spoken text will appear here after generation starts.",
     messagePlaceholder: "Type or paste text. Enter sends; Shift+Enter adds a line.", send: "Send",
+    inlineVideoInstructionHint: "Start with [raise one hand] to direct that turn's video. The instruction is not spoken.",
     queued: "Ready for chat", preparing: "Preparing character", chatting: "Gemma 4 is responding",
     synthesizing: "Synthesizing speech", generating: "Generating video", playable: "Playable", completed: "Generation complete",
     failed: "Error", cancelled: "Cancelled", preparingModel: "Preparing the model and speaking anchor",
@@ -139,8 +157,8 @@ let settingsDirty = false;
 let liveSettingsPromise = Promise.resolve();
 let liveSettingsRevision = 0;
 const liveSettingNames = [
-  "concept", "action_level", "lip_sync_mode", "conversation_language", "voice_id",
-  "video_seed", "target_chunk_seconds", "startup_buffer_chunks"
+  "concept", "video_instruction", "action_level", "lip_sync_mode", "conversation_language", "voice_id",
+  "video_seed", "video_steps", "modality_scale_enabled", "target_chunk_seconds", "startup_buffer_chunks"
 ];
 const profileSizes = {
   "16fps-resolution": [640, 352], "16fps-5x3": [640, 384], "16fps-3x2": [576, 384],
@@ -275,8 +293,31 @@ function syncLiveSettings() {
   return liveSettingsPromise;
 }
 
-form.querySelectorAll(".live-setting input, .live-setting select").forEach(control => {
+form.querySelectorAll(".live-setting input, .live-setting select, .live-setting textarea").forEach(control => {
   control.addEventListener("change", () => { syncLiveSettings().catch(() => {}); });
+});
+
+const regenerateIdleButton = document.querySelector("#regenerate-idle");
+regenerateIdleButton.addEventListener("click", async () => {
+  if (!sessionId) return;
+  regenerateIdleButton.disabled = true;
+  statusLabel.textContent = t("regeneratingIdle");
+  try {
+    await syncLiveSettings();
+    const response = await fetch(`/api/sessions/${sessionId}/regenerate-idle`, {method: "POST"});
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || `HTTP ${response.status}`);
+    if (data.idle_video_url) {
+      stageIdle.src = `${data.idle_video_url}?t=${data.idle_video_ready_at || Date.now()}`;
+      stageIdle.load();
+      showIdleStage();
+    }
+    statusLabel.textContent = t(data.status);
+  } catch (error) {
+    statusLabel.textContent = t("error", error.message);
+  } finally {
+    regenerateIdleButton.disabled = false;
+  }
 });
 
 form.addEventListener("submit", async (event) => {
@@ -301,6 +342,7 @@ form.addEventListener("submit", async (event) => {
       stageIdle.src = `${data.idle_video_url}?t=${data.idle_video_ready_at || Date.now()}`;
       stageIdle.load();
     }
+    regenerateIdleButton.hidden = !data.character_prepared;
     showIdleStage();
     connectEvents();
     narrationText.disabled = false;
@@ -430,9 +472,14 @@ function processSession(session) {
 
 function showIdleStage() {
   const hasIdleVideo = Boolean(stageIdle.getAttribute("src"));
+  const becomingVisible = hasIdleVideo && !stageIdle.classList.contains("visible");
   stageCharacter.hidden = hasIdleVideo;
   stageCharacter.classList.toggle("visible", !hasIdleVideo);
   stageIdle.hidden = !hasIdleVideo;
+  if (becomingVisible && stageIdle.readyState > 0) {
+    stageIdle.pause();
+    stageIdle.currentTime = 0;
+  }
   stageIdle.classList.toggle("visible", hasIdleVideo);
   if (hasIdleVideo) stageIdle.play().catch(() => {});
 }
