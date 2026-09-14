@@ -59,22 +59,6 @@
             <option value="strong" data-i18n="lipStrong">強い口動作（大きい開口）</option>
           </select>
         </label>
-        <label class="setup-setting"><span data-i18n="idlePoolSize">待機動画の本数</span>
-          <select name="idle_pool_size">
-            <option value="3" selected data-i18n="idlePool3">3本（登録が速い）</option>
-            <option value="4" data-i18n="idlePool4">4本</option>
-            <option value="5" data-i18n="idlePool5">5本（追い生成が減り会話と衝突しにくい）</option>
-          </select>
-          <small class="setting-help" data-i18n="idlePoolHint">多いほど登録に時間がかかりますが、待機中の追い生成頻度が下がります。</small>
-        </label>
-        <label class="setup-setting"><span data-i18n="idleMotionProfile">アイドル動作（画像の構図）</span>
-          <select name="idle_motion_profile">
-            <option value="closeup" data-i18n="idleCloseup">顔アップ（自然な小動作）</option>
-            <option value="upper_body" data-i18n="idleUpperBody">上半身（動きを抑える）</option>
-            <option value="wide" selected data-i18n="idleWide">膝上・全身（安定重視）</option>
-          </select>
-          <small class="setting-help" data-i18n="idleMotionHint">画像内に写っている範囲を選択してください。キャラクター設定時に反映します。</small>
-        </label>
         <label class="setup-setting"><span data-i18n="videoProfile">動画プロファイル</span>
           <select name="video_profile" id="video-profile">
             <optgroup label="16fps・解像度優先" data-i18n-label="profile16">
@@ -108,6 +92,22 @@
               <option value="24fps-portrait-416x704">416×704（3:5 縦型・上限）</option>
             </optgroup>
           </select>
+        </label>
+        <label class="setup-setting"><span data-i18n="idleMotionProfile">アイドル動作（画像の構図）</span>
+          <select name="idle_motion_profile">
+            <option value="closeup" data-i18n="idleCloseup">顔アップ（自然な小動作）</option>
+            <option value="upper_body" data-i18n="idleUpperBody">上半身（動きを抑える）</option>
+            <option value="wide" selected data-i18n="idleWide">膝上・全身（安定重視）</option>
+          </select>
+          <small class="setting-help" data-i18n="idleMotionHint">画像内に写っている範囲を選択してください。キャラクター設定時に反映します。</small>
+        </label>
+        <label class="setup-setting"><span data-i18n="idlePoolSize">待機動画の本数</span>
+          <select name="idle_pool_size">
+            <option value="3" selected data-i18n="idlePool3">3本（登録が速い）</option>
+            <option value="4" data-i18n="idlePool4">4本</option>
+            <option value="5" data-i18n="idlePool5">5本（追い生成が減り会話と衝突しにくい）</option>
+          </select>
+          <small class="setting-help" data-i18n="idlePoolHint">多いほど登録に時間がかかりますが、待機中の追い生成頻度が下がります。</small>
         </label>
         <label class="live-setting"><span data-i18n="conversationLanguage">会話言語</span>
           <select name="conversation_language">
