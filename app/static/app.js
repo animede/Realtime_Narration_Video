@@ -36,7 +36,7 @@ const messages = {
     lipSetting: "実写の発話設定", lipNatural: "自然（閉口優先）",
     lipBalanced: "バランス（軽い開口）", lipMedium: "中間1（やや強い）",
     lipMediumStrong: "中間2（強め）", lipStrong: "強い口動作（大きい開口）", videoProfile: "動画プロファイル",
-    idleMotionProfile: "アイドル動作（画像の構図）", idleCloseup: "顔アップ（自然な小動作）",
+    idleMotionProfile: "アイドル動作（構図）", idleCloseup: "顔アップ（自然な小動作）",
     idleUpperBody: "上半身（動きを抑える）", idleWide: "膝上・全身（安定重視）",
     idleMotionHint: "画像内に写っている範囲を選択してください。キャラクター設定時に反映します。",
     profile16: "16fps・解像度優先", profile20: "20fps・バランス", profile24: "24fps・動き優先",
