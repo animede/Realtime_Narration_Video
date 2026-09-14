@@ -56,7 +56,7 @@ const messages = {
     narrationLabel: "朗読させたい文章", narrationPlaceholder: "文章を入力・貼り付け、またはTXTファイルをドロップ",
     selectTextFile: "TXTを選択", narrate: "朗読", idle: "待機中", configuredCharacter: "設定したキャラクター",
     captionPlaceholder: "生成を開始すると、ここに読み上げ内容が表示されます。",
-    messagePlaceholder: "テキストを入力・貼り付け。Enterで送信、Shift+Enterで改行。", send: "送信", sendCombined: "送信・朗読", toggleHide: "設定パネルを隠す", toggleShow: "設定パネルを表示",
+    messagePlaceholder: "テキストを入力・貼り付け。Enterで送信、Shift+Enterで改行。", send: "送信", sendCombined: "送信・朗読", toggleHide: "設定パネルを隠す", toggleShow: "設定パネルを表示", panelWord: "設定",
     inlineVideoInstructionHint: "文頭に［手を上げながら］のように書くと、そのターンだけの動画指示になります。指示部分は読み上げません。",
     queued: "チャット入力待ち", preparing: "キャラクターを準備中", chatting: "Gemma 4が応答中",
     synthesizing: "音声を合成中", generating: "映像を生成中", playable: "再生可能", completed: "生成完了",
@@ -100,7 +100,7 @@ const messages = {
     narrationLabel: "Text to narrate", narrationPlaceholder: "Type or paste text, or drop a TXT file",
     selectTextFile: "Choose TXT", narrate: "Narrate", idle: "Idle", configuredCharacter: "Configured character",
     captionPlaceholder: "Spoken text will appear here after generation starts.",
-    messagePlaceholder: "Type or paste text. Enter sends; Shift+Enter adds a line.", send: "Send", sendCombined: "Send / Narrate", toggleHide: "Hide settings panel", toggleShow: "Show settings panel",
+    messagePlaceholder: "Type or paste text. Enter sends; Shift+Enter adds a line.", send: "Send", sendCombined: "Send / Narrate", toggleHide: "Hide settings panel", toggleShow: "Show settings panel", panelWord: "Settings",
     inlineVideoInstructionHint: "Start with [raise one hand] to direct that turn's video. The instruction is not spoken.",
     queued: "Ready for chat", preparing: "Preparing character", chatting: "Gemma 4 is responding",
     synthesizing: "Synthesizing speech", generating: "Generating video", playable: "Playable", completed: "Generation complete",
@@ -126,7 +126,7 @@ let settingsHidden = localStorage.getItem("settingsHidden") === "1";
 
 function applySettingsHidden() {
   document.querySelector("main").classList.toggle("settings-hidden", settingsHidden);
-  toggleSettings.textContent = settingsHidden ? "▶" : "◀";
+  toggleSettings.textContent = (settingsHidden ? "▶ " : "◀ ") + t("panelWord");
   const hint = t(settingsHidden ? "toggleShow" : "toggleHide");
   toggleSettings.title = hint;
   toggleSettings.setAttribute("aria-label", hint);

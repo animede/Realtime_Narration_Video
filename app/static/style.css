@@ -68,7 +68,8 @@ button:disabled { opacity: .45; }
 .status-row { display: flex; justify-content: space-between; color: #9fc7ff; margin-bottom: 12px; }
 .status-left { display: flex; align-items: center; gap: 14px; }
 .status-left .panel-toggle { border-right: none; }
-.panel-toggle { width: 30px; padding: 4px 0; border: 1px solid #35455f; border-radius: 7px; background: #0b111e; color: #9fc7ff; cursor: pointer; font: inherit; }
+.panel-toggle { padding: 4px 12px; border: 1px solid #35455f; border-radius: 7px; background: #0b111e; color: #9fc7ff; cursor: pointer; font: inherit; font-size: .85rem; white-space: nowrap; }
+.status-left > #status { border-left: 1px solid #27344c; padding-left: 14px; }
 .panel-toggle:hover { border-color: #68e4ff; color: #68e4ff; }
 main.settings-hidden { grid-template-columns: 1fr; }
 main.settings-hidden .input-panel { display: none; }
