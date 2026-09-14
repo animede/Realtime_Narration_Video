@@ -47,7 +47,6 @@ const messages = {
     languageEnglish: "英語", liveSettingHint: "緑枠：次の生成から即時反映", setupSettingHint: "黄枠：設定ボタンで反映",
     speakerId: "話者ID", videoSeed: "動画seed", chunkSeconds: "チャンク秒数", preloadCount: "先読み数",
     videoSteps: "生成steps", modalityScale: "口動作強調（scale 1.3）", scaleOn: "有効", scaleOff: "無効（高速）",
-    regenerateIdle: "待機動画を再生成", regeneratingIdle: "待機動画を生成中（seedを変えてガチャできます）",
     idleLiveliness: "待機の動き", idleLively: "活発（動き優先・既定）", idleCalm: "静か（完全ループ）",
     idlePoolSize: "待機動画の本数", idlePool3: "3本（登録が速い）", idlePool4: "4本", idlePool5: "5本（追い生成が減り会話と衝突しにくい）", idlePoolHint: "多いほど登録に時間がかかりますが、待機中の追い生成頻度が下がります。",
     cameraLock: "カメラロック", cameraLockOn: "有効（ドリフト固定）", cameraLockOff: "無効（生成のまま）",
@@ -92,7 +91,6 @@ const messages = {
     languageEnglish: "English", liveSettingHint: "Green: applies to the next generation", setupSettingHint: "Yellow: use the settings button",
     speakerId: "Speaker ID", videoSeed: "Video seed", chunkSeconds: "Chunk seconds", preloadCount: "Startup buffer",
     videoSteps: "Video steps", modalityScale: "Mouth emphasis (scale 1.3)", scaleOn: "Enabled", scaleOff: "Disabled (fast)",
-    regenerateIdle: "Regenerate idle video", regeneratingIdle: "Regenerating the idle video (change the seed to reroll)",
     idleLiveliness: "Idle motion", idleLively: "Lively (more motion, default)", idleCalm: "Calm (perfect loop)",
     idlePoolSize: "Idle clip count", idlePool3: "3 (faster setup)", idlePool4: "4", idlePool5: "5 (fewer refreshes, fewer chat conflicts)", idlePoolHint: "More clips take longer to set up but refresh less often while idle.",
     cameraLock: "Camera lock", cameraLockOn: "Enabled (pins drift)", cameraLockOff: "Disabled (as generated)",
@@ -504,27 +502,6 @@ form.querySelectorAll(".live-setting input, .live-setting select, .live-setting 
   control.addEventListener("change", () => { syncLiveSettings().catch(() => {}); });
 });
 
-const regenerateIdleButton = document.querySelector("#regenerate-idle");
-regenerateIdleButton.addEventListener("click", async () => {
-  if (!sessionId) return;
-  regenerateIdleButton.disabled = true;
-  statusLabel.textContent = t("regeneratingIdle");
-  try {
-    await syncLiveSettings();
-    const response = await fetch(`/api/sessions/${sessionId}/regenerate-idle`, {method: "POST"});
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.detail || `HTTP ${response.status}`);
-    resetIdlePool();
-    absorbIdlePool(data);
-    showIdleStage();
-    statusLabel.textContent = t(data.status);
-  } catch (error) {
-    statusLabel.textContent = t("error", error.message);
-  } finally {
-    regenerateIdleButton.disabled = false;
-  }
-});
-
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
   const button = form.querySelector('button[type="submit"]');
@@ -546,7 +523,6 @@ form.addEventListener("submit", async (event) => {
     preloadedIndex = null;
     resetIdlePool();
     absorbIdlePool(data);
-    regenerateIdleButton.hidden = !data.character_prepared;
     showIdleStage();
     connectEvents();
     narrationText.disabled = false;
