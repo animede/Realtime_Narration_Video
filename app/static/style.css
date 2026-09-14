@@ -14,6 +14,7 @@ form { gap: 18px; }
 /* 設定フォームは2列(縦長対策)。画像・凡例・自由記述・数値グリッド・ボタンは全幅 */
 #form { grid-template-columns: 1fr 1fr; gap: 14px 12px; align-items: start; }
 #form > label:has(.drop-zone), #form > label:has(textarea),
+#form > label:has(input[name="concept"]),
 #form > .settings-legend, #form > .options, #form > button { grid-column: 1 / -1; }
 input, textarea, select { width: 100%; border: 1px solid #35455f; border-radius: 9px; background: #0b111e; color: inherit; padding: 11px; font: inherit; }
 .live-setting > input, .live-setting > select, .live-setting > textarea { border-color: #3d9e83; }
@@ -32,7 +33,7 @@ input, textarea, select { width: 100%; border: 1px solid #35455f; border-radius:
 .input-panel.live-settings-error .live-setting > textarea { border-color: #ff7f91; }
 .setting-help { color: #8290a8; line-height: 1.45; }
 textarea { resize: vertical; }
-.options { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.options { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .drop-zone { position: relative; display: grid; place-items: center; min-height: 112px; overflow: hidden; border: 1px dashed #516785; border-radius: 12px; background: #0a1220; cursor: pointer; transition: border-color .16s, background .16s, transform .16s; }
 .drop-zone:hover, .drop-zone.drag-over { border-color: #68e4ff; background: #10233a; transform: translateY(-1px); }
 .drop-zone input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
