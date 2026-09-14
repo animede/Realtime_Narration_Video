@@ -276,10 +276,15 @@ function swapIdleTo(src) {
   incoming.load();
   const start = () => {
     if (!idleShown) return;
+    // 新クリップを上のレイヤーで完全に不透明にしてから旧クリップを外す。
+    // 同時クロスフェードだと両方が半透明になる瞬間に、下層のチャンク
+    // プレーヤ(コントロール付き)が一瞬透けて見える。
+    incoming.style.zIndex = "4";
+    outgoing.style.zIndex = "3";
     incoming.play().catch(() => {});
     incoming.classList.add("visible");
-    outgoing.classList.remove("visible");
     activeIdleStage = idleStages.indexOf(incoming);
+    setTimeout(() => outgoing.classList.remove("visible"), 420);
   };
   if (incoming.readyState >= 2) start();
   else incoming.addEventListener("canplay", start, {once: true});
