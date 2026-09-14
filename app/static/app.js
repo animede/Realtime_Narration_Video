@@ -56,7 +56,7 @@ const messages = {
     narrationLabel: "朗読させたい文章", narrationPlaceholder: "文章を入力・貼り付け、またはTXTファイルをドロップ",
     selectTextFile: "TXTを選択", narrate: "朗読", idle: "待機中", configuredCharacter: "設定したキャラクター",
     captionPlaceholder: "生成を開始すると、ここに読み上げ内容が表示されます。",
-    messagePlaceholder: "テキストを入力・貼り付け。Enterで送信、Shift+Enterで改行。", send: "送信", sendCombined: "送信・朗読", toggleHide: "設定パネルを隠す", toggleShow: "設定パネルを表示", panelWord: "設定",
+    messagePlaceholder: "テキストを入力・貼り付け。Enterで送信、Shift+Enterで改行。", send: "送信", sendCombined: "送信・朗読", toggleHide: "設定パネルを隠す", toggleShow: "設定パネルを表示", panelWord: "設定", savePreset: "このキャラクターを保存", presetNamePrompt: "保存名を入力してください(空欄で日時)", presetRestoring: "保存キャラクターを呼び出し中", presetDelete: "削除", presetDeleteConfirm: name => `「${name}」を削除しますか？`,
     inlineVideoInstructionHint: "文頭に［手を上げながら］のように書くと、そのターンだけの動画指示になります。指示部分は読み上げません。",
     queued: "チャット入力待ち", preparing: "キャラクターを準備中", chatting: "Gemma 4が応答中",
     synthesizing: "音声を合成中", generating: "映像を生成中", playable: "再生可能", completed: "生成完了",
@@ -100,7 +100,7 @@ const messages = {
     narrationLabel: "Text to narrate", narrationPlaceholder: "Type or paste text, or drop a TXT file",
     selectTextFile: "Choose TXT", narrate: "Narrate", idle: "Idle", configuredCharacter: "Configured character",
     captionPlaceholder: "Spoken text will appear here after generation starts.",
-    messagePlaceholder: "Type or paste text. Enter sends; Shift+Enter adds a line.", send: "Send", sendCombined: "Send / Narrate", toggleHide: "Hide settings panel", toggleShow: "Show settings panel", panelWord: "Settings",
+    messagePlaceholder: "Type or paste text. Enter sends; Shift+Enter adds a line.", send: "Send", sendCombined: "Send / Narrate", toggleHide: "Hide settings panel", toggleShow: "Show settings panel", panelWord: "Settings", savePreset: "Save this character", presetNamePrompt: "Preset name (blank = timestamp)", presetRestoring: "Loading saved character", presetDelete: "Delete", presetDeleteConfirm: name => `Delete "${name}"?`,
     inlineVideoInstructionHint: "Start with [raise one hand] to direct that turn's video. The instruction is not spoken.",
     queued: "Ready for chat", preparing: "Preparing character", chatting: "Gemma 4 is responding",
     synthesizing: "Synthesizing speech", generating: "Generating video", playable: "Playable", completed: "Generation complete",
@@ -502,6 +502,108 @@ form.querySelectorAll(".live-setting input, .live-setting select, .live-setting 
   control.addEventListener("change", () => { syncLiveSettings().catch(() => {}); });
 });
 
+function adoptSession(data) {
+  sessionId = data.id;
+  liveSettingsRevision = 0;
+  liveSettingsPromise = Promise.resolve();
+  inputPanel.classList.remove("live-settings-saving", "live-settings-error");
+  settingsDirty = false;
+  nextIndex = (data.chunks || []).length;
+  playingIndex = null;
+  playbackStarted = false;
+  preloadedIndex = null;
+  resetIdlePool();
+  absorbIdlePool(data);
+  showIdleStage();
+  connectEvents();
+  narrationText.disabled = false;
+  chatForm.querySelector("button").disabled = false;
+  narrationButton.disabled = false;
+  statusLabel.textContent = t("queued");
+  const setupButton = form.querySelector('button[type="submit"]');
+  setupButton.textContent = t("configured");
+  setupButton.disabled = false;  // 「設定済み・再設定」として押下可能のまま
+  document.querySelector("#save-preset").hidden = !data.character_prepared;
+}
+
+// --- キャラクタープリセット(保存・一覧・復元・削除) ---
+const presetStrip = document.querySelector("#preset-strip");
+const savePresetButton = document.querySelector("#save-preset");
+
+function applyPresetSettings(settings) {
+  Object.entries(settings || {}).forEach(([key, value]) => {
+    const control = form.querySelector(`[name="${key}"]`);
+    if (control) control.value = String(value);
+  });
+  applyAspectRatio();
+}
+
+async function refreshPresets() {
+  try {
+    const response = await fetch("/api/presets");
+    const presets = await response.json();
+    presetStrip.textContent = "";
+    presetStrip.hidden = presets.length === 0;
+    presets.forEach(preset => {
+      const item = document.createElement("span");
+      item.className = "preset-item";
+      const image = document.createElement("img");
+      image.src = preset.thumbnail_url;
+      image.title = `${preset.name}（クリックで呼び出し）`;
+      image.addEventListener("click", () => { restorePreset(preset.id); });
+      const label = document.createElement("span");
+      label.className = "preset-name";
+      label.textContent = preset.name;
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "preset-delete";
+      remove.textContent = "×";
+      remove.title = t("presetDelete");
+      remove.addEventListener("click", async () => {
+        if (!confirm(t("presetDeleteConfirm", preset.name))) return;
+        await fetch(`/api/presets/${preset.id}`, {method: "DELETE"});
+        refreshPresets();
+      });
+      item.append(image, remove, label);
+      presetStrip.append(item);
+    });
+  } catch { /* 一覧の取得失敗は致命的ではない */ }
+}
+
+async function restorePreset(presetId) {
+  statusLabel.textContent = t("presetRestoring");
+  try {
+    const response = await fetch(`/api/presets/${presetId}/restore`, {method: "POST"});
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || `HTTP ${response.status}`);
+    applyPresetSettings(data);
+    adoptSession(data);
+  } catch (error) {
+    statusLabel.textContent = t("error", error.message);
+  }
+}
+
+savePresetButton.addEventListener("click", async () => {
+  if (!sessionId) return;
+  const name = prompt(t("presetNamePrompt"), "");
+  if (name === null) return;
+  savePresetButton.disabled = true;
+  try {
+    const response = await fetch("/api/presets", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({session_id: sessionId, name})
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || `HTTP ${response.status}`);
+    refreshPresets();
+  } catch (error) {
+    statusLabel.textContent = t("error", error.message);
+  } finally {
+    savePresetButton.disabled = false;
+  }
+});
+refreshPresets();
+
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
   const button = form.querySelector('button[type="submit"]');
@@ -512,25 +614,7 @@ form.addEventListener("submit", async (event) => {
     const response = await fetch("/api/sessions", {method: "POST", body: new FormData(form)});
     const data = await response.json();
     if (!response.ok) throw new Error(data.detail || `HTTP ${response.status}`);
-    sessionId = data.id;
-    liveSettingsRevision = 0;
-    liveSettingsPromise = Promise.resolve();
-    inputPanel.classList.remove("live-settings-saving", "live-settings-error");
-    settingsDirty = false;
-    nextIndex = 0;
-    playingIndex = null;
-    playbackStarted = false;
-    preloadedIndex = null;
-    resetIdlePool();
-    absorbIdlePool(data);
-    showIdleStage();
-    connectEvents();
-    narrationText.disabled = false;
-    chatForm.querySelector("button").disabled = false;
-    narrationButton.disabled = false;
-    statusLabel.textContent = t("queued");
-    button.textContent = t("configured");
-    button.disabled = false;  // 「設定済み・再設定」として押下可能のままにする
+    adoptSession(data);
     narrationText.focus();
   } catch (error) {
     statusLabel.textContent = t("error", error.message);

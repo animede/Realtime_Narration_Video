@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Realtime Narration Video</title>
-  <link rel="stylesheet" href="/static/style.css?v=14">
+  <link rel="stylesheet" href="/static/style.css?v=15">
 </head>
 <body>
   <main>
@@ -22,6 +22,7 @@
       <p data-i18n="tagline">文章を約5秒ずつ音声化し、生成できた映像から順番に再生します。</p>
     </header>
     <section class="panel input-panel">
+      <div id="preset-strip" class="preset-strip" hidden></div>
       <div class="narration-entry side-text-drop" id="text-drop">
         <label for="narration-source" data-i18n="narrationLabel">朗読させたい文章</label>
         <textarea id="narration-source" rows="7" placeholder="文章を入力・貼り付け、またはTXTファイルをドロップ" data-i18n-placeholder="narrationPlaceholder"></textarea>
@@ -163,6 +164,7 @@
           </label>
         </div>
         <button type="submit" data-i18n="setCharacter">キャラクターを設定</button>
+        <button type="button" id="save-preset" data-i18n="savePreset" hidden>このキャラクターを保存</button>
       </form>
     </section>
     <section class="panel player-panel">
@@ -186,6 +188,6 @@
       <ol id="chunks"></ol>
     </section>
   </main>
-  <script src="/static/app.js?v=51"></script>
+  <script src="/static/app.js?v=52"></script>
 </body>
 </html>

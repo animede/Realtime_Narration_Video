@@ -38,6 +38,7 @@ The video was compressed for GitHub and therefore looks slightly worse than the 
 - The first clip of every turn uses a lower resolution with the same framing; later clips use the selected resolution. Steps are configurable in the UI (default 4; the first clip uses `min(4, steps)`)
 - Idle playback is a playlist: setup generates 3–5 clips (selectable) that all start and end at the input pose and play in sequence. One fresh clip is generated per playback cycle, an incoming chat message interrupts idle generation immediately so conversation wins the GPU, and refreshing pauses while the tab is hidden or after five minutes of inactivity
 - Optional turn continuity: start the turn from the frozen idle frame captured at send time, and/or FLF-anchor the final chunk back to the idle start pose — with both enabled the idle→talk→idle cycle is pose-continuous (defaults keep the classic lip-motion-first behaviour)
+- A well-tuned character can be saved as a preset (settings + idle pool + speaking anchors) and restored instantly from a thumbnail gallery with zero regeneration
 - Seed 1004, the most reliable observed photorealistic articulation seed, is the default and can be changed in the UI for every photorealistic chunk
 - Photorealistic anchor preparation always uses `modality_scale=1.3`; applying it during conversation is a UI toggle ("Mouth emphasis", default off for speed — distilled 4-step generation was verified to keep mouth articulation)
 - At the beginning of each turn, the original character image covers the previous turn until the new video starts
@@ -81,6 +82,7 @@ The Gateway manages backends exclusively. Unmanaged H3/LTX processes on ports 86
 - `POST /api/sessions` — submit the character, text, concept, and settings as multipart data
 - `POST /api/sessions/{id}/messages` — submit a user message and start streaming generation
 - `POST /api/sessions/{id}/narrations` — split and narrate supplied text directly without the LLM
+- `POST /api/presets` / `GET /api/presets` / `POST /api/presets/{id}/restore` / `DELETE /api/presets/{id}` — save, list, instantly restore (zero regeneration), and delete character presets
 - `POST /api/sessions/{id}/regenerate-idle` — reset the idle pool and rebuild with the current settings
 - `POST /api/sessions/{id}/idle-pool` — append one clip to the idle pool (oldest is deleted)
 - `GET /api/sessions/{id}/idle-video/{n}` — fetch a pooled idle clip

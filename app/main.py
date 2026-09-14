@@ -3,9 +3,13 @@ from __future__ import annotations
 import asyncio
 import base64
 import binascii
+import json
 import re
 import shutil
+from datetime import datetime
 from pathlib import Path
+from time import time
+from uuid import uuid4
 
 import httpx
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
@@ -333,6 +337,132 @@ def get_session_or_404(session_id: str) -> NarrationSession:
 @app.get("/api/sessions/{session_id}", response_model=NarrationSession)
 async def get_session(session_id: str):
     return get_session_or_404(session_id)
+
+
+# --- キャラクタープリセット(保存・一覧・復元・削除) --------------------
+# ローカル単一ユーザー構成なのでユーザー管理なしのサーバ側保存
+# (data/presets/)。復元は保存済みのアイドルプール・アンカーをコピーする
+# だけなので再生成ゼロで即時にセッションが立ち上がる。
+
+PRESET_SETTINGS_KEYS = [
+    "concept", "video_instruction", "action_level", "voice_id", "video_profile",
+    "character_mode", "lip_sync_mode", "idle_motion_profile", "idle_liveliness",
+    "idle_pool_size", "turn_anchor_mode", "turn_end_mode", "camera_lock_enabled",
+    "video_seed", "video_steps", "modality_scale_enabled",
+    "ui_language", "conversation_language", "target_chunk_seconds",
+    "startup_buffer_chunks",
+]
+
+PRESET_FILE_PATTERNS = [
+    "character.*", "character-neutral.png", "character-speaking*.png",
+    "character-idle-*.mp4",
+]
+
+
+def preset_dir() -> Path:
+    folder = settings.data_dir / "presets"
+    folder.mkdir(parents=True, exist_ok=True)
+    return folder
+
+
+def load_preset(preset_id: str) -> dict:
+    if not re.fullmatch(r"[0-9a-f]{32}", preset_id):
+        raise HTTPException(400, "プリセットIDが不正です")
+    meta = preset_dir() / preset_id / "preset.json"
+    if not meta.is_file():
+        raise HTTPException(404, "プリセットが見つかりません")
+    return json.loads(meta.read_text(encoding="utf-8"))
+
+
+class PresetCreateRequest(BaseModel):
+    session_id: str
+    name: str | None = None
+
+
+@app.post("/api/presets")
+async def create_preset(request: PresetCreateRequest):
+    session = get_session_or_404(request.session_id)
+    if not session.character_prepared:
+        raise HTTPException(400, "先にキャラクターを設定してください")
+    source = settings.data_dir / session.id
+    preset_id = uuid4().hex
+    target = preset_dir() / preset_id
+    target.mkdir(parents=True)
+    copied: list[str] = []
+    for pattern in PRESET_FILE_PATTERNS:
+        for path in sorted(source.glob(pattern)):
+            shutil.copyfile(path, target / path.name)
+            copied.append(path.name)
+    indices = sorted(int(url.rsplit("/", 1)[1]) for url in session.idle_videos)
+    meta = {
+        "id": preset_id,
+        "name": (request.name or "").strip() or datetime.now().strftime("キャラクター %m/%d %H:%M"),
+        "created_at": time(),
+        "settings": {key: getattr(session, key) for key in PRESET_SETTINGS_KEYS},
+        "idle_indices": indices,
+        "files": copied,
+    }
+    (target / "preset.json").write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+    return meta
+
+
+@app.get("/api/presets")
+async def list_presets():
+    presets = []
+    for meta_path in preset_dir().glob("*/preset.json"):
+        try:
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        presets.append({
+            "id": meta["id"], "name": meta.get("name", ""),
+            "created_at": meta.get("created_at", 0),
+            "thumbnail_url": f"/api/presets/{meta['id']}/thumbnail",
+            "video_profile": meta.get("settings", {}).get("video_profile", ""),
+        })
+    presets.sort(key=lambda item: item["created_at"], reverse=True)
+    return presets
+
+
+@app.get("/api/presets/{preset_id}/thumbnail")
+async def preset_thumbnail(preset_id: str):
+    load_preset(preset_id)
+    folder = preset_dir() / preset_id
+    image = next(iter(folder.glob("character.*")), None)
+    if image is None:
+        raise HTTPException(404, "サムネイルが見つかりません")
+    return FileResponse(image)
+
+
+@app.delete("/api/presets/{preset_id}", status_code=204)
+async def delete_preset(preset_id: str):
+    load_preset(preset_id)
+    shutil.rmtree(preset_dir() / preset_id, ignore_errors=True)
+
+
+@app.post("/api/presets/{preset_id}/restore", response_model=NarrationSession)
+async def restore_preset(preset_id: str):
+    """保存済みキャラクターから再生成ゼロでセッションを立ち上げる。"""
+    meta = load_preset(preset_id)
+    source = preset_dir() / preset_id
+    session = NarrationSession(text="", **meta["settings"])
+    folder = settings.data_dir / session.id
+    folder.mkdir(parents=True, exist_ok=True)
+    for name in meta.get("files", []):
+        src = source / name
+        if src.is_file():
+            shutil.copyfile(src, folder / name)
+    session.character_prepared = True
+    indices = meta.get("idle_indices", [])
+    session.idle_videos = [f"/api/sessions/{session.id}/idle-video/{i}" for i in indices]
+    session.idle_pool_next = (max(indices) + 1) if indices else 0
+    if session.idle_videos:
+        session.idle_video_url = session.idle_videos[-1]
+        session.idle_video_ready_at = time()
+    session.status = "queued"
+    orchestrator.save(session)
+    orchestrator.register(session)
+    return session
 
 
 # セッションごとのSSE視聴者数。ブラウザが閉じられた(=視聴者ゼロが続く)のに

@@ -70,6 +70,13 @@ button:disabled { opacity: .45; }
 .status-left .panel-toggle { border-right: none; }
 .panel-toggle { padding: 4px 12px; border: 1px solid #35455f; border-radius: 7px; background: #0b111e; color: #9fc7ff; cursor: pointer; font: inherit; font-size: .85rem; white-space: nowrap; }
 .status-left > #status { border-left: 1px solid #27344c; padding-left: 14px; }
+.preset-strip { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 16px; }
+.preset-item { position: relative; width: 64px; }
+.preset-item img { width: 64px; height: 64px; object-fit: cover; border-radius: 10px; border: 1px solid #35455f; cursor: pointer; display: block; }
+.preset-item img:hover { border-color: #68e4ff; }
+.preset-item .preset-name { display: block; font-size: .62rem; color: #9aa8bd; text-align: center; margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.preset-item .preset-delete { position: absolute; top: -6px; right: -6px; width: 18px; height: 18px; line-height: 15px; padding: 0; border-radius: 50%; border: 1px solid #5b3a44; background: #2a1218; color: #ff9aa8; font-size: .7rem; cursor: pointer; }
+#save-preset { border-color: #3d9e83; background: #10231f; color: #8fe6c8; }
 .panel-toggle:hover { border-color: #68e4ff; color: #68e4ff; }
 main.settings-hidden { grid-template-columns: 1fr; }
 main.settings-hidden .input-panel { display: none; }
