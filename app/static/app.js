@@ -753,8 +753,12 @@ function preloadFollowing(chunks) {
 
 players.forEach(player => player.addEventListener("ended", () => {
   if (player !== players[activePlayer]) return;
+  // advanceAfterSpeech(発話境界)が先に進めていたら二重前進しない。
+  // 発話が動画尺いっぱいのチャンクでは両者がほぼ同時に発火し、
+  // nextIndexが2つ進んでチャンクを1つ飛ばすレースがあった(2026-09-14)。
+  if (playingIndex === null) return;
   lastEndedAt = performance.now();
-  nextIndex += 1;
+  nextIndex = playingIndex + 1;
   playingIndex = null;
   if (latestSession) {
     playNext(latestSession.chunks);
