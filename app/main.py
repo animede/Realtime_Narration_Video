@@ -80,7 +80,7 @@ async def create_session(
     lip_sync_mode: str = Form("natural"),
     idle_motion_profile: str = Form("wide"),
     idle_liveliness: str = Form("lively"),
-    idle_pool_size: int = Form(3),
+    idle_pool_size: int = Form(5),
     turn_anchor_mode: str = Form("speaking"),
     turn_end_mode: str = Form("free"),
     camera_lock_enabled: bool = Form(False),

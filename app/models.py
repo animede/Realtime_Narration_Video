@@ -61,7 +61,7 @@ class NarrationSession(BaseModel):
     lip_sync_mode: str = "natural"
     idle_motion_profile: str = "wide"
     idle_liveliness: str = "lively"
-    idle_pool_size: int = 3
+    idle_pool_size: int = 5
     turn_anchor_mode: str = "speaking"
     turn_end_mode: str = "free"
     camera_lock_enabled: bool = False
