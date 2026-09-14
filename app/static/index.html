@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Realtime Narration Video</title>
-  <link rel="stylesheet" href="/static/style.css?v=7">
+  <link rel="stylesheet" href="/static/style.css?v=8">
 </head>
 <body>
   <main>
@@ -31,6 +31,7 @@
             <span class="drop-copy"><b data-i18n="dropImage">画像をドロップ</b><small data-i18n="dropImageHint">PNG・JPEG・WebP／クリックして選択</small></span>
           </span>
         </label>
+        <p class="settings-legend"><span class="live-key" data-i18n="liveSettingHint">緑枠：次の生成から即時反映</span><span class="setup-key" data-i18n="setupSettingHint">黄枠：設定ボタンで反映</span></p>
         <label class="live-setting"><span data-i18n="sceneDirection">映像の方向性</span><input name="concept" placeholder="落ち着いたスタジオで説明する" data-i18n-placeholder="scenePlaceholder"></label>
         <label class="live-setting"><span data-i18n="videoInstruction">動画への指示</span>
           <textarea name="video_instruction" rows="3" maxlength="1000" placeholder="例：話の要点で小さくうなずき、最後に微笑む" data-i18n-placeholder="videoInstructionPlaceholder"></textarea>
@@ -115,13 +116,12 @@
             <option value="en" data-i18n="languageEnglish">英語</option>
           </select>
         </label>
-        <p class="settings-legend"><span class="live-key" data-i18n="liveSettingHint">緑枠：次の生成から即時反映</span><span class="setup-key" data-i18n="setupSettingHint">黄枠：設定ボタンで反映</span></p>
         <div class="options">
           <label class="live-setting"><span data-i18n="speakerId">話者ID</span><input name="voice_id" type="number" value="888753760"></label>
           <label class="live-setting"><span data-i18n="videoSeed">動画seed</span><input name="video_seed" type="number" min="0" max="2147483647" step="1" value="1004"></label>
           <label class="live-setting"><span data-i18n="idleLiveliness">待機の動き</span>
             <select name="idle_liveliness">
-              <option value="lively" selected data-i18n="idleLively">活発（継ぎ目はクロスフェード）</option>
+              <option value="lively" selected data-i18n="idleLively">活発（動き優先・既定）</option>
               <option value="calm" data-i18n="idleCalm">静か（完全ループ）</option>
             </select>
           </label>
@@ -187,6 +187,6 @@
       <ol id="chunks"></ol>
     </section>
   </main>
-  <script src="/static/app.js?v=35"></script>
+  <script src="/static/app.js?v=36"></script>
 </body>
 </html>

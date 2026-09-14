@@ -11,6 +11,10 @@ h1 { margin: 4px 0; font-size: clamp(2rem, 5vw, 4.5rem); letter-spacing: -.055em
 .panel { background: rgba(15, 22, 36, .88); border: 1px solid #27344c; border-radius: 18px; padding: 22px; box-shadow: 0 18px 60px #0007; }
 form, label { display: grid; gap: 8px; }
 form { gap: 18px; }
+/* 設定フォームは2列(縦長対策)。画像・凡例・自由記述・数値グリッド・ボタンは全幅 */
+#form { grid-template-columns: 1fr 1fr; gap: 14px 12px; align-items: start; }
+#form > label:has(.drop-zone), #form > label:has(textarea),
+#form > .settings-legend, #form > .options, #form > button { grid-column: 1 / -1; }
 input, textarea, select { width: 100%; border: 1px solid #35455f; border-radius: 9px; background: #0b111e; color: inherit; padding: 11px; font: inherit; }
 .live-setting > input, .live-setting > select, .live-setting > textarea { border-color: #3d9e83; }
 .setup-setting > input, .setup-setting > select, .setup-setting > .drop-zone { border-color: #b79243; }
