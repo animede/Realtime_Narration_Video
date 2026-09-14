@@ -104,3 +104,18 @@ def test_clause_commas_split_but_enumeration_commas_do_not():
         "その場にふさわしい動作系列を新たに構成する能力です。",
     ]
     assert rest == ""
+
+def test_headings_newlines_and_short_enumeration_items():
+    # 見出しのコロン・改行は区切り。ひらがな終わりでも短い列挙項目
+    # (瞬き、)では切らない(直前の区切りから8文字以上の距離条件)。
+    text = ("問題の所在：リアルタイム描画とリアルタイム行動は異なる\n"
+            "現在のAIキャラクターやAI VTuberの多くは、音声合成、リップシンク、瞬き、"
+            "視線制御、表情切り替えなどをリアルタイムに行います。")
+    parts, rest = pop_speakable(text, force=True)
+    assert parts == [
+        "問題の所在：",
+        "リアルタイム描画とリアルタイム行動は異なる",
+        "現在のAIキャラクターやAI VTuberの多くは、",
+        "音声合成、リップシンク、瞬き、視線制御、表情切り替えなどをリアルタイムに行います。",
+    ]
+    assert rest == ""

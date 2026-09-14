@@ -30,6 +30,32 @@ def _looks_english(text: str) -> bool:
     return latin > japanese * 2
 
 
+def _ja_clause_cut(buffer: str, min_soft: int, clause_max: int) -> int | None:
+    """日本語の節境界を探す。
+
+    - 読点は「直前がひらがな」かつ「直前の区切りから8文字以上」のとき節境界
+      (〜であり、/〜し、/〜ですが、)。名詞列挙(内容、口調、瞬き、)は
+      項目が短く直前も漢字が多いので対象外になる。
+    - コロン系(：:；;)は見出しの区切りとして採用(時刻 10:30 等の数字直後は除く)。
+    """
+    previous_end = 0
+    for match in re.finditer(r"[、，,：:；;]\s*", buffer):
+        end = match.end()
+        if end > clause_max:
+            break
+        mark = buffer[match.start()]
+        before = buffer[match.start() - 1] if match.start() > 0 else ""
+        if mark in "：:；;":
+            accept = not before.isdigit()
+        else:
+            accept = ("\u3041" <= before <= "\u309f"
+                      and match.start() - previous_end >= 8)
+        if accept and end >= min_soft:
+            return end
+        previous_end = end
+    return None
+
+
 def pop_speakable(buffer: str, force: bool = False, max_chars: int | None = None,
                   min_soft_chars: int | None = None, tail_guard_chars: int | None = None,
                   language: str = "auto") -> tuple[list[str], str]:
@@ -40,25 +66,23 @@ def pop_speakable(buffer: str, force: bool = False, max_chars: int | None = None
         effective_max = max_chars if max_chars is not None else (52 if english else 22)
         effective_min_soft = min_soft_chars if min_soft_chars is not None else (12 if english else 6)
         effective_guard = tail_guard_chars if tail_guard_chars is not None else (12 if english else 4)
-        hard = re.search(r"[。！？!?.]\s*", buffer)
+        # 改行は見出しや段落の区切りなので常に文末扱いにする。
+        hard = re.search(r"[。！？!?.]\s*|\n+", buffer)
         soft = re.search(r"[、，,；;：:]\s*", buffer)
-        # 日本語の節境界: 直前がひらがなの読点(〜であり、/〜し、/〜が、など)。
-        # 名詞列挙の読点(内容、口調、感情、= 直前が漢字)では切らない
-        # (2026-09-14 ユーザー指定の分解粒度)。
-        clause = None if english else re.search(r"(?<=[\u3041-\u309f])[、，,]\s*", buffer)
         clause_max = 48
         # Japanese question endings such as "ますか。" often arrive just after
         # max_chars.  Wait for a small look-ahead window so a one-character
         # suffix is not emitted as a separate speech/video chunk.
         if english:
             soft_ok = soft is not None and effective_min_soft <= soft.end() <= effective_max
+            soft_end = soft.end() if soft_ok else None
         else:
-            soft = clause
-            soft_ok = clause is not None and effective_min_soft <= clause.end() <= clause_max
-        if soft_ok and (hard is None or soft.end() < hard.end()):
+            soft_end = _ja_clause_cut(buffer, effective_min_soft, clause_max)
+            soft_ok = soft_end is not None
+        if soft_ok and (hard is None or soft_end < hard.end()):
             # A short greeting or introductory clause can start TTS before the
             # rest of the LLM response has arrived.
-            cut = soft.end()
+            cut = soft_end
         elif hard:
             # 文末は窓に関係なく常に分割する(文をまたいで塊になるのを防ぐ)。
             cut = hard.end()
