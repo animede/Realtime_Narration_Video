@@ -22,6 +22,14 @@
       <p data-i18n="tagline">文章を約5秒ずつ音声化し、生成できた映像から順番に再生します。</p>
     </header>
     <section class="panel input-panel">
+      <div class="narration-entry side-text-drop" id="text-drop">
+        <label for="narration-source" data-i18n="narrationLabel">朗読させたい文章</label>
+        <textarea id="narration-source" rows="7" placeholder="文章を入力・貼り付け、またはTXTファイルをドロップ" data-i18n-placeholder="narrationPlaceholder"></textarea>
+        <div class="narration-tools">
+          <label class="file-picker"><input id="text-file" type="file" accept=".txt,text/plain"><span data-i18n="selectTextFile">TXTを選択</span></label>
+          <small id="text-file-name" class="file-name">UTF-8・Shift_JIS</small>
+          <button id="narrate-button" type="button" disabled data-i18n="narrate">朗読</button>
+        </div>
       <form id="form">
         <input name="ui_language" id="ui-language-form" type="hidden" value="ja">
         <label class="setup-setting"><span data-i18n="characterImage">キャラクター画像</span>
@@ -156,14 +164,6 @@
         </div>
         <button type="submit" data-i18n="setCharacter">キャラクターを設定</button>
       </form>
-      <div class="narration-entry side-text-drop" id="text-drop">
-        <label for="narration-source" data-i18n="narrationLabel">朗読させたい文章</label>
-        <textarea id="narration-source" rows="7" placeholder="文章を入力・貼り付け、またはTXTファイルをドロップ" data-i18n-placeholder="narrationPlaceholder"></textarea>
-        <div class="narration-tools">
-          <label class="file-picker"><input id="text-file" type="file" accept=".txt,text/plain"><span data-i18n="selectTextFile">TXTを選択</span></label>
-          <small id="text-file-name" class="file-name">UTF-8・Shift_JIS</small>
-          <button id="narrate-button" type="button" disabled data-i18n="narrate">朗読</button>
-        </div>
       </div>
     </section>
     <section class="panel player-panel">
