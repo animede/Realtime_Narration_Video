@@ -21,7 +21,10 @@ def test_english_chunking_uses_longer_units_than_japanese():
     text = "alpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima"
     english, _ = pop_speakable(text, language="en")
     japanese, _ = pop_speakable(text, language="ja")
-    assert len(english[0]) > len(japanese[0])
+    # 英語は単語境界(空白)で長い単位に切れる。日本語モードは句読点が
+    # 無い限り切らずに待つ(ぶち切り禁止)。
+    assert english and len(english[0]) > 30
+    assert japanese == []
 
 
 def test_browser_contains_bilingual_controls_and_persists_language():

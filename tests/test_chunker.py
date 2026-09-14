@@ -9,10 +9,16 @@ def test_split_sentences_keeps_punctuation():
     assert split_sentences("こんにちは。元気ですか？\nはい！") == ["こんにちは。", "元気ですか？", "はい！"]
 
 
-def test_long_sentence_is_split():
-    chunks = split_sentences("あ" * 100, max_chars=30)
-    assert all(len(item) <= 30 for item in chunks)
-    assert "".join(chunks) == "あ" * 100
+def test_long_sentence_is_split_only_at_punctuation():
+    text = "ひとつめの節を読み、ふたつめの節も読み、みっつめの節まで読み続けてから終わります"
+    chunks = split_sentences(text, max_chars=20)
+    # 窓内の最後の読点まで詰めて切る(読点以外では切らない)
+    assert chunks == ["ひとつめの節を読み、ふたつめの節も読み、", "みっつめの節まで読み続けてから終わります"]
+
+
+def test_sentence_without_punctuation_is_never_chopped():
+    # 句読点のない位置での文字数ぶち切りはしない(不自然な切れ目対策)。
+    assert split_sentences("あ" * 100, max_chars=30) == ["あ" * 100]
 
 
 def test_group_parts_uses_spoken_duration():

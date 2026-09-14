@@ -45,19 +45,26 @@ def pop_speakable(buffer: str, force: bool = False, max_chars: int | None = None
         # Japanese question endings such as "ますか。" often arrive just after
         # max_chars.  Wait for a small look-ahead window so a one-character
         # suffix is not emitted as a separate speech/video chunk.
-        if hard and hard.end() <= effective_max + effective_guard:
-            cut = hard.end()
-        elif soft and effective_min_soft <= soft.end() <= effective_max:
+        soft_ok = soft is not None and effective_min_soft <= soft.end() <= effective_max
+        if soft_ok and (hard is None or soft.end() < hard.end()):
             # A short greeting or introductory clause can start TTS before the
             # rest of the LLM response has arrived.
             cut = soft.end()
+        elif hard:
+            # 文末は窓に関係なく常に分割する(文をまたいで塊になるのを防ぐ)。
+            cut = hard.end()
         elif len(buffer) >= effective_max + effective_guard:
             candidates = [buffer.rfind(mark, 0, effective_max + 1) for mark in "、，,；;：:\n"]
             if english:
                 candidates.append(buffer.rfind(" ", 0, effective_max + 1))
             cut = max(candidates) + 1
             if cut <= 0:
-                cut = effective_max
+                # 句読点のない位置でのぶち切りはしない — 文末か読点が届くまで
+                # バッファを伸ばして待つ(2026-09-14 ユーザー判断: 不自然な
+                # 切れ目より生成待ちの間の方が聞きやすい)。
+                if not force:
+                    break
+                cut = len(buffer)
             if not english:
                 cut = _extend_over_japanese_inflection(buffer, cut)
         elif force:

@@ -13,10 +13,14 @@ def test_stream_chunker_emits_complete_sentence():
     assert rest == "次は受信中"
 
 
-def test_stream_chunker_limits_long_output():
+def test_stream_chunker_waits_for_punctuation():
+    # 句読点が来るまで切らずに待つ(ぶち切り禁止)。強制フラッシュ時のみ全量。
     parts, rest = pop_speakable("あ" * 40)
-    assert parts == ["あ" * 22]
-    assert rest == "あ" * 18
+    assert parts == []
+    assert rest == "あ" * 40
+    parts, rest = pop_speakable("あ" * 40, force=True)
+    assert parts == ["あ" * 40]
+    assert rest == ""
 
 
 def test_weather_response_is_split_for_low_latency():
@@ -25,7 +29,7 @@ def test_weather_response_is_split_for_low_latency():
     parts, rest = pop_speakable(text, force=True)
     assert parts[0] == "申し訳ありませんが、"
     assert "お住まいの地域の天気予報を、" in parts
-    assert max(map(len, parts)) <= 26
+    assert all(part.endswith(("。", "、")) for part in parts)
     assert rest == ""
 
 
@@ -68,10 +72,8 @@ def test_stream_chunker_keeps_natural_weather_advice_together():
 def test_stream_chunker_does_not_split_japanese_verb_inflection():
     text = "五反田で「打ってる」というのが具体的に何を指しているか教えていただけますか。例えば、"
     parts, rest = pop_speakable(text, force=True)
-    assert "指" not in parts
-    assert parts[0].endswith("指しているか")
-    assert parts[1] == "教えていただけますか。"
-    assert parts[2] == "例えば、"
+    assert parts[0].endswith("ますか。")  # 文末までひとまとまり(活用の途中で切らない)
+    assert parts[1] == "例えば、"
     assert rest == ""
 
 

@@ -11,7 +11,14 @@ class SpeechPart:
     duration: float
 
 
-def split_sentences(text: str, max_chars: int = 22) -> list[str]:
+def split_sentences(text: str, max_chars: int = 48) -> list[str]:
+    """文末・読点でのみ分割する。
+
+    句読点のない位置での文字数ぶち切りはしない(不自然な切れ目は、
+    生成待ちの小さな間より聞き苦しい — 2026-09-14 ユーザー判断)。読点も
+    ない長文はそのまま1パートにする。5秒を超える発話は既存の
+    「映像は最終フレーム静止・音声は最後まで再生」機構が受け止める。
+    """
     normalized = re.sub(r"[ \t]+", " ", text.replace("\r", "\n")).strip()
     raw = re.split(r"(?<=[。！？!?])(?:[\u3000 \t]*|\n+)|\n+", normalized)
     result: list[str] = []
@@ -20,7 +27,7 @@ def split_sentences(text: str, max_chars: int = 22) -> list[str]:
             candidates = [sentence.rfind(mark, 0, max_chars + 1) for mark in "、，,；;：:"]
             cut = max(candidates) + 1
             if cut <= 0:
-                cut = max_chars
+                break  # 句読点が無ければ切らない
             result.append(sentence[:cut].strip())
             sentence = sentence[cut:].strip()
         if sentence:
