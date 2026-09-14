@@ -267,24 +267,43 @@ function captureTurnAnchor() {
   return canvas.toDataURL("image/png");
 }
 
+function preloadNextIdle() {
+  // 再生中に次クリップを裏の要素へ先読みデコードしておく(切替時の
+  // 静止待ちをなくす)。
+  const upcoming = idleQueue[0];
+  if (!upcoming) return;
+  const standby = idleStages[1 - activeIdleStage];
+  if (standby.getAttribute("src") !== upcoming) {
+    standby.src = upcoming;
+    standby.load();
+  }
+}
+
 function swapIdleTo(src) {
   const incoming = idleStages[1 - activeIdleStage];
   const outgoing = idleStages[activeIdleStage];
   currentIdleSrc = src;
-  incoming.src = src;
+  if (incoming.getAttribute("src") !== src) {
+    incoming.src = src;
+    incoming.load();
+  }
   incoming.hidden = false;
-  incoming.load();
   const start = () => {
     if (!idleShown) return;
-    // 新クリップを上のレイヤーで完全に不透明にしてから旧クリップを外す。
-    // 同時クロスフェードだと両方が半透明になる瞬間に、下層のチャンク
-    // プレーヤ(コントロール付き)が一瞬透けて見える。
+    // 全クリップが入力ポーズで始まり終わるため、待機同士の切替は
+    // フェードなしの瞬時切替が最も自然(0.36秒のディゾルブは「静止した
+    // 旧フレーム×動く新クリップ」の二重写りとして知覚される。24fpsで
+    // 特に目立つ)。旧クリップは不透明な新クリップの下で外す。
     incoming.style.zIndex = "4";
     outgoing.style.zIndex = "3";
+    incoming.style.transition = "none";
     incoming.play().catch(() => {});
     incoming.classList.add("visible");
+    void incoming.offsetWidth;  // 反映を強制してからtransitionを戻す
+    incoming.style.transition = "";
+    outgoing.classList.remove("visible");
     activeIdleStage = idleStages.indexOf(incoming);
-    setTimeout(() => outgoing.classList.remove("visible"), 420);
+    preloadNextIdle();
   };
   if (incoming.readyState >= 2) start();
   else incoming.addEventListener("canplay", start, {once: true});
@@ -294,6 +313,7 @@ function startIdlePlayback() {
   const next = idleQueue.shift() || currentIdleSrc;
   if (next) swapIdleTo(next);
   maybeExtendIdlePool();
+  preloadNextIdle();
 }
 
 function advanceIdle() {
