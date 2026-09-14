@@ -335,20 +335,49 @@ async def get_session(session_id: str):
     return get_session_or_404(session_id)
 
 
+# セッションごとのSSE視聴者数。ブラウザが閉じられた(=視聴者ゼロが続く)のに
+# 長文ターンの生成がGPUを走らせ続ける事故を防ぐ(2026-09-14 実測報告)。
+sse_watchers: dict[str, int] = {}
+
+
+async def _cancel_if_abandoned(session_id: str) -> None:
+    """視聴者ゼロが5秒続いたら実行中のターンをキャンセルする。
+
+    リロードの瞬断は5秒の猶予で保護される(再接続すればカウントが戻る)。
+    キャンセルは既存のチャンク境界チェックで効き、現在のチャンク完了後
+    (最大~5秒)に生成が止まる。
+    """
+    await asyncio.sleep(5)
+    if sse_watchers.get(session_id, 0) > 0:
+        return
+    if not orchestrator.is_running(session_id):
+        return
+    session = orchestrator.sessions.get(session_id)
+    if session is not None and not session.cancelled:
+        session.cancelled = True
+        orchestrator.save(session)
+
+
 @app.get("/api/sessions/{session_id}/events")
 async def session_events(session_id: str):
     get_session_or_404(session_id)
 
     async def events():
         previous = ""
-        while True:
-            payload = get_session_or_404(session_id).model_dump_json()
-            if payload != previous:
-                yield f"event: session\ndata: {payload}\n\n"
-                previous = payload
-            else:
-                yield ": keepalive\n\n"
-            await asyncio.sleep(0.25)
+        sse_watchers[session_id] = sse_watchers.get(session_id, 0) + 1
+        try:
+            while True:
+                payload = get_session_or_404(session_id).model_dump_json()
+                if payload != previous:
+                    yield f"event: session\ndata: {payload}\n\n"
+                    previous = payload
+                else:
+                    yield ": keepalive\n\n"
+                await asyncio.sleep(0.25)
+        finally:
+            sse_watchers[session_id] = max(0, sse_watchers.get(session_id, 1) - 1)
+            if sse_watchers[session_id] == 0:
+                asyncio.create_task(_cancel_if_abandoned(session_id))
 
     return StreamingResponse(events(), media_type="text/event-stream", headers={
         "Cache-Control": "no-cache",
