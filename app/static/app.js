@@ -30,7 +30,7 @@ const messages = {
     dropImageHint: "PNG・JPEG・WebP／クリックして選択", sceneDirection: "映像の方向性",
     scenePlaceholder: "落ち着いたスタジオで説明する", videoInstruction: "動画への指示",
     videoInstructionPlaceholder: "例：話の要点で小さくうなずき、最後に微笑む",
-    videoInstructionHint: "次に生成する発話動画へ反映します。空欄なら自動生成します。", actionLevel: "アクション量",
+    videoInstructionHint: "次に生成する動画へ反映します。空欄なら自動生成します。", actionLevel: "アクション量",
     actionLow: "少なめ（安定重視）", actionMedium: "標準", actionHigh: "多め（表現重視）", characterType: "キャラクター種別",
     characterStandard: "標準（イラスト・3D）", characterPhotoreal: "実写・口動作優先",
     lipSetting: "実写の発話設定", lipNatural: "自然（閉口優先）",
