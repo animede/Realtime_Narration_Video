@@ -67,7 +67,19 @@ class Orchestrator:
         self.settings = settings
         self.sessions: dict[str, NarrationSession] = {}
         self.tasks: dict[str, asyncio.Task] = {}
+        # 進行中のアイドル生成のクライアント(チャット到着時に即中断するため)。
+        self.idle_clients: dict[str, GatewayClient] = {}
         settings.data_dir.mkdir(parents=True, exist_ok=True)
+
+    async def interrupt_idle(self, session_id: str) -> None:
+        """Stop an in-flight idle generation so a conversation can start now.
+
+        The backend honours the interrupt at the next denoise step boundary
+        (~0.5s), freeing the GPU for the first conversational chunk.
+        """
+        client = self.idle_clients.get(session_id)
+        if client is not None:
+            await client.interrupt()
 
     def register(self, session: NarrationSession) -> None:
         self.sessions[session.id] = session
@@ -99,7 +111,8 @@ class Orchestrator:
         temporary.replace(folder / "session.json")
 
     async def _build_idle_loop(self, session: NarrationSession, gateway: GatewayClient,
-                               folder: Path, character: Path,
+                               folder: Path, character: Path, target: Path,
+                               base_seed: int,
                                neutral_target: Path | None = None) -> Path:
         """Generate the idle clip and turn it into the display loop.
 
@@ -159,7 +172,7 @@ class Orchestrator:
                 idle_image_id, idle_audio_id,
                 last_image_id=None if lively else idle_image_id,
                 prompt=idle_prompt,
-                seed=session.video_seed + attempt * 101,
+                seed=base_seed + attempt * 101,
                 video_profile=preparation_profile,
                 steps=8, num_frames=idle_frames,
             )
@@ -205,7 +218,7 @@ class Orchestrator:
                         "sharp, crisp, and in focus with high detail throughout. " + camera_tail +
                         "Finish exactly in the same neutral pose as the reference for a smooth loop."
                     ),
-                    seed=session.video_seed + attempt * 77,
+                    seed=base_seed + attempt * 77,
                     video_profile=preparation_profile,
                     steps=8, num_frames=return_frames,
                 )
@@ -240,7 +253,7 @@ class Orchestrator:
         if neutral_target is not None:
             # Take the closed-mouth reference from the input-anchored clip start.
             await self._frame_at(idle_locked, neutral_target, 0.05)
-        idle_video = folder / "character-idle.mp4"
+        idle_video = target
         idle_slowdown = IDLE_MOTION_PROFILES.get(
             session.idle_motion_profile, IDLE_MOTION_PROFILES["wide"]
         )
@@ -259,26 +272,81 @@ class Orchestrator:
         )
         idle_raw.unlink(missing_ok=True)
         idle_locked.unlink(missing_ok=True)
-        session.idle_video_url = f"/api/sessions/{session.id}/idle-video"
-        session.idle_video_ready_at = time()
         return idle_video
 
-    async def regenerate_idle(self, session: NarrationSession) -> None:
-        """Rebuild only the idle loop (e.g. after a seed change).
+    # 既定の待機プール本数(セッション側 idle_pool_size で3〜5に変更可能。
+    # 本数が多いほど巡回が長くなり、追い生成の頻度=会話との衝突確率が下がる)。
+    IDLE_POOL_SIZE = 3
 
-        The speaking anchors and the neutral reference stay untouched so the
-        conversational path is unaffected.
+    async def _add_idle_to_pool(self, session: NarrationSession, gateway: GatewayClient,
+                                folder: Path, character: Path,
+                                neutral_target: Path | None = None) -> None:
+        """Generate one idle clip and rotate it into the playback pool.
+
+        Every clip starts and ends at the input pose, so the frontend can
+        chain pool entries with a same-pose switch. Old entries beyond
+        IDLE_POOL_SIZE are deleted from disk.
         """
+        index = session.idle_pool_next
+        session.idle_pool_next += 1
+        target = folder / f"character-idle-{index:03}.mp4"
+        await self._build_idle_loop(
+            session, gateway, folder, character, target=target,
+            base_seed=session.video_seed + index * 1009,
+            neutral_target=neutral_target,
+        )
+        session.idle_videos.append(f"/api/sessions/{session.id}/idle-video/{index}")
+        while len(session.idle_videos) > max(session.idle_pool_size, 3):
+            dropped = session.idle_videos.pop(0)
+            old_index = int(dropped.rsplit("/", 1)[1])
+            (folder / f"character-idle-{old_index:03}.mp4").unlink(missing_ok=True)
+        # Legacy single-video field keeps pointing at the newest entry.
+        session.idle_video_url = session.idle_videos[-1]
+        session.idle_video_ready_at = time()
+        self.save(session)
+
+    def _character_image(self, session: NarrationSession) -> Path:
         folder = self.settings.data_dir / session.id
         candidates = [p for p in folder.glob("character.*")
                       if p.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp"}]
         if not candidates:
             raise RuntimeError("キャラクター画像が見つかりません")
+        return candidates[0]
+
+    async def regenerate_idle(self, session: NarrationSession) -> None:
+        """Reset the idle pool and start over with the current settings.
+
+        Generates one fresh clip for instant feedback; the frontend refill
+        trigger grows the pool back to IDLE_POOL_SIZE during playback. The
+        speaking anchors and the neutral reference stay untouched.
+        """
+        folder = self.settings.data_dir / session.id
+        character = self._character_image(session)
+        for url in session.idle_videos:
+            old_index = int(url.rsplit("/", 1)[1])
+            (folder / f"character-idle-{old_index:03}.mp4").unlink(missing_ok=True)
+        session.idle_videos = []
         gateway = GatewayClient(self.settings.gateway_url, self.settings.gateway_preset,
                                 self.settings.poll_interval)
         await gateway.load_backend()
-        await self._build_idle_loop(session, gateway, folder, candidates[0])
-        self.save(session)
+        self.idle_clients[session.id] = gateway
+        try:
+            await self._add_idle_to_pool(session, gateway, folder, character)
+        finally:
+            self.idle_clients.pop(session.id, None)
+
+    async def extend_idle_pool(self, session: NarrationSession) -> None:
+        """Add one fresh clip to the pool (frontend refill trigger)."""
+        folder = self.settings.data_dir / session.id
+        character = self._character_image(session)
+        gateway = GatewayClient(self.settings.gateway_url, self.settings.gateway_preset,
+                                self.settings.poll_interval)
+        await gateway.load_backend()
+        self.idle_clients[session.id] = gateway
+        try:
+            await self._add_idle_to_pool(session, gateway, folder, character)
+        finally:
+            self.idle_clients.pop(session.id, None)
 
     async def prepare_character(self, session: NarrationSession, character: Path) -> None:
         """Preload LTX and create idle video plus the photoreal speaking reference."""
@@ -302,10 +370,14 @@ class Orchestrator:
             _, _, _, preparation_frames = VIDEO_PROFILES[preparation_profile]
             # The closed-mouth reference for natural speech and all
             # articulation anchors comes from the camera-locked clip start.
+            # 初期プールとして3本生成する(全て入力ポーズで始まり終わるので
+            # フロント側で順次再生し、残り2本で1本追い足す — ユーザー発案)。
             neutral = folder / "character-neutral.png"
-            await self._build_idle_loop(session, gateway, folder, character,
-                                        neutral_target=neutral)
-            self.save(session)
+            for pool_index in range(max(session.idle_pool_size, 3)):
+                await self._add_idle_to_pool(
+                    session, gateway, folder, character,
+                    neutral_target=neutral if pool_index == 0 else None,
+                )
 
             if speech_task is not None:
                 wav, _ = await speech_task

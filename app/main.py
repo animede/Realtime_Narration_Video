@@ -78,6 +78,7 @@ async def create_session(
     lip_sync_mode: str = Form("natural"),
     idle_motion_profile: str = Form("wide"),
     idle_liveliness: str = Form("lively"),
+    idle_pool_size: int = Form(3),
     camera_lock_enabled: bool = Form(False),
     video_seed: int = Form(1004),
     video_steps: int = Form(4),
@@ -110,6 +111,8 @@ async def create_session(
         raise HTTPException(400, "アイドル動作設定が不正です")
     if idle_liveliness not in {"calm", "lively"}:
         raise HTTPException(400, "待機の動き設定が不正です")
+    if not 3 <= idle_pool_size <= 5:
+        raise HTTPException(400, "待機動画の本数は3～5にしてください")
     if not 0 <= video_seed <= 2_147_483_647:
         raise HTTPException(400, "seedは0～2147483647で指定してください")
     if not 1 <= video_steps <= 12:
@@ -124,6 +127,7 @@ async def create_session(
         voice_id=voice_id, video_profile=video_profile,
         character_mode=character_mode, lip_sync_mode=lip_sync_mode,
         idle_motion_profile=idle_motion_profile, idle_liveliness=idle_liveliness,
+        idle_pool_size=idle_pool_size,
         camera_lock_enabled=camera_lock_enabled,
         video_seed=video_seed,
         video_steps=video_steps, modality_scale_enabled=modality_scale_enabled,
@@ -215,6 +219,8 @@ async def regenerate_idle(session_id: str):
     try:
         await orchestrator.regenerate_idle(session)
     except Exception as exc:
+        if "interrupted" in str(exc):
+            raise HTTPException(409, "会話を優先したため待機動画の生成を中断しました") from exc
         raise HTTPException(502, f"待機動画の再生成に失敗しました: {exc}") from exc
     return session
 
@@ -241,6 +247,8 @@ async def send_message(session_id: str, request: ChatRequest):
     session.error = None
     session.messages.append(ChatMessage(role="user", content=text))
     orchestrator.save(session)
+    # 進行中のアイドル生成があれば即中断して会話生成を優先する。
+    await orchestrator.interrupt_idle(session_id)
     orchestrator.chat(session, character, turn_video_instruction)
     return session
 
@@ -264,6 +272,7 @@ async def narrate_text(session_id: str, request: ChatRequest):
     session.error = None
     session.assistant_text = ""
     orchestrator.save(session)
+    await orchestrator.interrupt_idle(session_id)
     orchestrator.narrate(session, character, text)
     return session
 
@@ -319,10 +328,45 @@ async def cancel_session(session_id: str):
 @app.get("/api/sessions/{session_id}/idle-video")
 async def idle_video(session_id: str):
     session = get_session_or_404(session_id)
-    path = settings.data_dir / session.id / "character-idle.mp4"
+    folder = settings.data_dir / session.id
+    # 互換: プールの最新エントリを返す(旧単一ファイルがあればそれも許容)。
+    if session.idle_videos:
+        index = int(session.idle_videos[-1].rsplit("/", 1)[1])
+        path = folder / f"character-idle-{index:03}.mp4"
+    else:
+        path = folder / "character-idle.mp4"
     if not path.is_file():
         raise HTTPException(404, "待機動画はまだ完成していません")
     return FileResponse(path, media_type="video/mp4")
+
+
+@app.get("/api/sessions/{session_id}/idle-video/{index}")
+async def idle_video_pool(session_id: str, index: int):
+    session = get_session_or_404(session_id)
+    if not 0 <= index < 100_000:
+        raise HTTPException(400, "indexが不正です")
+    path = settings.data_dir / session.id / f"character-idle-{index:03}.mp4"
+    if not path.is_file():
+        raise HTTPException(404, "待機動画はまだ完成していません")
+    return FileResponse(path, media_type="video/mp4")
+
+
+@app.post("/api/sessions/{session_id}/idle-pool", response_model=NarrationSession)
+async def extend_idle_pool(session_id: str):
+    """再生側の残りが少なくなったときに1本追い足す(フロントが呼ぶ)。"""
+    session = get_session_or_404(session_id)
+    if not session.character_prepared:
+        raise HTTPException(400, "先にキャラクターを設定してください")
+    if orchestrator.is_running(session_id):
+        raise HTTPException(409, "応答の生成中は待機動画を追加できません")
+    try:
+        await orchestrator.extend_idle_pool(session)
+    except Exception as exc:
+        if "interrupted" in str(exc):
+            # チャット優先の中断 — フロントは黙って次の周回で再試行する。
+            raise HTTPException(409, "会話を優先したため待機動画の生成を中断しました") from exc
+        raise HTTPException(502, f"待機動画の追加に失敗しました: {exc}") from exc
+    return session
 
 
 def chunk_file(session_id: str, index: int, suffix: str) -> Path:

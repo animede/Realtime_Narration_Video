@@ -68,6 +68,29 @@ class GatewayClient:
         self.base_url = base_url.rstrip("/")
         self.preset = preset
         self.poll_interval = poll_interval
+        self.last_job_id: str | None = None
+        self.cancel_requested = False
+
+    async def interrupt(self) -> None:
+        """Ask the backend to stop this client's in-flight job.
+
+        Also raises a cancel flag so a generate() that has not submitted its
+        job yet aborts before submission (ジョブID取得前の競合対策)。Reaction is
+        bounded by one denoise step (~0.5s); the polled job then settles into
+        "interrupted" and generate() raises GatewayError.
+        """
+        self.cancel_requested = True
+        await self._post_interrupt()
+
+    async def _post_interrupt(self) -> None:
+        if not self.last_job_id:
+            return
+        async with httpx.AsyncClient(timeout=10) as client:
+            try:
+                await client.post(f"{self.base_url}/ltx25/api/interrupt",
+                                  json={"job_id": self.last_job_id})
+            except httpx.HTTPError:
+                pass  # 中断は最善努力 — 失敗しても生成が続くだけ
 
     async def load_backend(self) -> dict:
         """Load the configured LTX backend early; an identical active setup is a no-op."""
@@ -120,12 +143,27 @@ class GatewayClient:
             # Override the tail anchor only; a full-strength (1.0) end anchor
             # makes the model freeze the whole clip to guarantee the return.
             body["extra"]["conditions"] = [{}, {"strength": last_image_strength}]
+        self.last_job_id = None
         async with httpx.AsyncClient(timeout=180) as client:
-            response = await client.post(f"{self.base_url}/api/v1/generate", json=body)
-            if response.is_error:
-                detail = response.text[:800]
-                raise GatewayError(f"動画生成受付失敗 HTTP {response.status_code}: {detail}")
+            # gatewayはバックエンド生成中の新規ジョブを409(busy)で拒否する
+            # (キューイング非対応)。アイドル生成の中断完了までの短い窓を
+            # リトライで吸収する。
+            deadline = asyncio.get_event_loop().time() + 15.0
+            while True:
+                if self.cancel_requested:
+                    raise GatewayError("動画生成がinterruptedになりました(送信前に中断)")
+                response = await client.post(f"{self.base_url}/api/v1/generate", json=body)
+                if response.status_code == 409 and asyncio.get_event_loop().time() < deadline:
+                    await asyncio.sleep(0.3)
+                    continue
+                if response.is_error:
+                    detail = response.text[:800]
+                    raise GatewayError(f"動画生成受付失敗 HTTP {response.status_code}: {detail}")
+                break
             job_id = response.json()["id"]
+            self.last_job_id = job_id
+            if self.cancel_requested:
+                await self._post_interrupt()
             while True:
                 await asyncio.sleep(self.poll_interval)
                 response = await client.get(f"{self.base_url}/api/v1/jobs/{job_id}")

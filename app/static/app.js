@@ -13,6 +13,7 @@ const characterInput = document.querySelector("#character-input");
 const characterPreview = document.querySelector("#character-preview");
 const stageCharacter = document.querySelector("#stage-character");
 const stageIdle = document.querySelector("#stage-idle");
+const stageIdleB = document.querySelector("#stage-idle-b");
 const textDrop = document.querySelector("#text-drop");
 const textFileInput = document.querySelector("#text-file");
 const narrationSource = document.querySelector("#narration-source");
@@ -48,6 +49,7 @@ const messages = {
     videoSteps: "生成steps（後続動画）", modalityScale: "口動作強調（scale 1.3）", scaleOn: "有効", scaleOff: "無効（高速）",
     regenerateIdle: "待機動画を再生成", regeneratingIdle: "待機動画を生成中（seedを変えてガチャできます）",
     idleLiveliness: "待機の動き", idleLively: "活発（継ぎ目はクロスフェード）", idleCalm: "静か（完全ループ）",
+    idlePoolSize: "待機動画の本数", idlePool3: "3本（登録が速い）", idlePool4: "4本", idlePool5: "5本（追い生成が減り会話と衝突しにくい）", idlePoolHint: "多いほど登録に時間がかかりますが、待機中の追い生成頻度が下がります。",
     cameraLock: "カメラロック（待機動画）", cameraLockOn: "有効（ドリフト固定）", cameraLockOff: "無効（生成のまま）",
     setCharacter: "キャラクターを設定", updateSettings: "設定を更新", configured: "設定済み", idleCharacter: "待機中のキャラクター",
     narrationLabel: "朗読させたい文章", narrationPlaceholder: "文章を入力・貼り付け、またはTXTファイルをドロップ",
@@ -90,6 +92,7 @@ const messages = {
     videoSteps: "Video steps (follow-up)", modalityScale: "Mouth emphasis (scale 1.3)", scaleOn: "Enabled", scaleOff: "Disabled (fast)",
     regenerateIdle: "Regenerate idle video", regeneratingIdle: "Regenerating the idle video (change the seed to reroll)",
     idleLiveliness: "Idle motion", idleLively: "Lively (crossfaded loop seam)", idleCalm: "Calm (perfect loop)",
+    idlePoolSize: "Idle clip count", idlePool3: "3 (faster setup)", idlePool4: "4", idlePool5: "5 (fewer refreshes, fewer chat conflicts)", idlePoolHint: "More clips take longer to set up but refresh less often while idle.",
     cameraLock: "Camera lock (idle video)", cameraLockOn: "Enabled (pins drift)", cameraLockOff: "Disabled (as generated)",
     setCharacter: "Set character", updateSettings: "Update settings", configured: "Configured", idleCharacter: "Idle character",
     narrationLabel: "Text to narrate", narrationPlaceholder: "Type or paste text, or drop a TXT file",
@@ -160,6 +163,112 @@ let switchGapMs = null;
 let settingsDirty = false;
 let liveSettingsPromise = Promise.resolve();
 let liveSettingsRevision = 0;
+// 待機プレイリスト: 全クリップが入力ポーズで始まり終わるので、順次再生の
+// 切替は同一ポーズ上で行われる。残りが2本以下になったら裏で1本追い足す。
+const idleStages = [stageIdle, stageIdleB];
+let activeIdleStage = 0;
+let idleQueue = [];
+let idleSeen = new Set();
+let idlePoolUrls = [];
+let idlePoolSize = 3;
+let currentIdleSrc = null;
+let idleShown = false;
+let idleExtendInFlight = false;
+let idleAdvances = 0;
+let idleLastExtendAdvance = -99;
+
+function absorbIdlePool(session) {
+  (session.idle_videos || []).forEach(url => {
+    if (!idleSeen.has(url)) {
+      idleSeen.add(url);
+      idleQueue.push(`${url}?t=${session.idle_video_ready_at || Date.now()}`);
+    }
+  });
+  if (session.idle_videos && session.idle_videos.length) {
+    const stamp = session.idle_video_ready_at || Date.now();
+    idlePoolUrls = session.idle_videos.map(url => `${url}?t=${stamp}`);
+  }
+  if (session.idle_pool_size) idlePoolSize = session.idle_pool_size;
+}
+
+function resetIdlePool() {
+  idleQueue = [];
+  idleSeen = new Set();
+  idlePoolUrls = [];
+  currentIdleSrc = null;
+  idleExtendInFlight = false;
+  idleAdvances = 0;
+  idleLastExtendAdvance = -99;
+  idleStages.forEach(media => {
+    media.pause();
+    media.classList.remove("visible");
+    media.removeAttribute("src");
+    media.load();
+    media.hidden = true;
+  });
+  activeIdleStage = 0;
+}
+
+function maybeExtendIdlePool() {
+  // ユーザー設計: プール1周(idle_pool_size本)につき1本だけリフレッシュする
+  // (毎クリップ生成するとアイドル中ずっとGPUが回り続けてしまう。本数を
+  // 増やすほど追い生成頻度=会話との衝突確率が下がる)。
+  if (!sessionId || idleExtendInFlight) return;
+  if (idleAdvances - idleLastExtendAdvance < idlePoolSize) return;
+  idleLastExtendAdvance = idleAdvances;
+  idleExtendInFlight = true;
+  fetch(`/api/sessions/${sessionId}/idle-pool`, {method: "POST"})
+    .then(async response => {
+      const data = await response.json();
+      if (response.ok) absorbIdlePool(data);
+    })
+    .catch(() => {})
+    .finally(() => { idleExtendInFlight = false; });
+}
+
+function swapIdleTo(src) {
+  const incoming = idleStages[1 - activeIdleStage];
+  const outgoing = idleStages[activeIdleStage];
+  currentIdleSrc = src;
+  incoming.src = src;
+  incoming.hidden = false;
+  incoming.load();
+  const start = () => {
+    if (!idleShown) return;
+    incoming.play().catch(() => {});
+    incoming.classList.add("visible");
+    outgoing.classList.remove("visible");
+    activeIdleStage = idleStages.indexOf(incoming);
+  };
+  if (incoming.readyState >= 2) start();
+  else incoming.addEventListener("canplay", start, {once: true});
+}
+
+function startIdlePlayback() {
+  const next = idleQueue.shift() || currentIdleSrc;
+  if (next) swapIdleTo(next);
+  maybeExtendIdlePool();
+}
+
+function advanceIdle() {
+  if (!idleShown) return;
+  idleAdvances += 1;
+  if (idleQueue.length === 0 && idlePoolUrls.length) {
+    // 新作待ちの間はプールを巡回再生する(全クリップが同ポーズで始まり
+    // 終わるので、どの順で繋いでも切替は自然)。
+    idleQueue = idlePoolUrls.filter(src => src !== currentIdleSrc);
+  }
+  maybeExtendIdlePool();
+  const next = idleQueue.shift();
+  if (next) {
+    swapIdleTo(next);
+  } else {
+    const active = idleStages[activeIdleStage];
+    active.currentTime = 0;
+    active.play().catch(() => {});
+  }
+}
+idleStages.forEach(media => media.addEventListener("ended", advanceIdle));
 const liveSettingNames = [
   "concept", "video_instruction", "action_level", "lip_sync_mode", "conversation_language", "voice_id",
   "video_seed", "video_steps", "modality_scale_enabled", "idle_liveliness",
@@ -221,11 +330,7 @@ characterInput.addEventListener("change", () => {
   characterPreview.src = previewUrl;
   characterPreview.hidden = false;
   stageCharacter.src = previewUrl;
-  stageIdle.pause();
-  stageIdle.classList.remove("visible");
-  stageIdle.removeAttribute("src");
-  stageIdle.load();
-  stageIdle.hidden = true;
+  resetIdlePool();
   stageCharacter.hidden = false;
   stageCharacter.classList.add("visible");
   characterDrop.classList.add("has-file");
@@ -312,11 +417,9 @@ regenerateIdleButton.addEventListener("click", async () => {
     const response = await fetch(`/api/sessions/${sessionId}/regenerate-idle`, {method: "POST"});
     const data = await response.json();
     if (!response.ok) throw new Error(data.detail || `HTTP ${response.status}`);
-    if (data.idle_video_url) {
-      stageIdle.src = `${data.idle_video_url}?t=${data.idle_video_ready_at || Date.now()}`;
-      stageIdle.load();
-      showIdleStage();
-    }
+    resetIdlePool();
+    absorbIdlePool(data);
+    showIdleStage();
     statusLabel.textContent = t(data.status);
   } catch (error) {
     statusLabel.textContent = t("error", error.message);
@@ -343,10 +446,8 @@ form.addEventListener("submit", async (event) => {
     playingIndex = null;
     playbackStarted = false;
     preloadedIndex = null;
-    if (data.idle_video_url) {
-      stageIdle.src = `${data.idle_video_url}?t=${data.idle_video_ready_at || Date.now()}`;
-      stageIdle.load();
-    }
+    resetIdlePool();
+    absorbIdlePool(data);
     regenerateIdleButton.hidden = !data.character_prepared;
     showIdleStage();
     connectEvents();
@@ -443,6 +544,7 @@ async function poll() {
 
 function processSession(session) {
   latestSession = session;
+  absorbIdlePool(session);
   statusLabel.textContent = t(session.status);
   if (session.error) statusLabel.textContent += `: ${session.error}`;
   assistantLive.textContent = session.assistant_text || "";
@@ -476,22 +578,28 @@ function processSession(session) {
 }
 
 function showIdleStage() {
-  const hasIdleVideo = Boolean(stageIdle.getAttribute("src"));
-  const becomingVisible = hasIdleVideo && !stageIdle.classList.contains("visible");
+  const active = idleStages[activeIdleStage];
+  const hasIdleVideo = Boolean(active.getAttribute("src")) || idleQueue.length > 0;
   stageCharacter.hidden = hasIdleVideo;
   stageCharacter.classList.toggle("visible", !hasIdleVideo);
-  stageIdle.hidden = !hasIdleVideo;
-  if (becomingVisible && stageIdle.readyState > 0) {
-    stageIdle.pause();
-    stageIdle.currentTime = 0;
+  idleShown = hasIdleVideo;
+  if (!hasIdleVideo) return;
+  if (!active.getAttribute("src")) {
+    startIdlePlayback();
+    return;
   }
-  stageIdle.classList.toggle("visible", hasIdleVideo);
-  if (hasIdleVideo) stageIdle.play().catch(() => {});
+  active.hidden = false;
+  if (!active.classList.contains("visible") && active.readyState > 0) {
+    active.currentTime = 0;
+  }
+  active.classList.add("visible");
+  active.play().catch(() => {});
 }
 
 function hideIdleStage() {
+  idleShown = false;
   stageCharacter.classList.remove("visible");
-  stageIdle.classList.remove("visible");
+  idleStages.forEach(media => media.classList.remove("visible"));
 }
 
 function restoreCharacterAfterTurn(session) {
@@ -583,10 +691,10 @@ players.forEach(player => player.addEventListener("playing", () => {
   }
 }));
 
-[stageCharacter, stageIdle].forEach(media => media.addEventListener("transitionend", () => {
+[stageCharacter, stageIdle, stageIdleB].forEach(media => media.addEventListener("transitionend", () => {
   if (!media.classList.contains("visible")) {
     media.hidden = true;
-    if (media === stageIdle) media.pause();
+    if (media !== stageCharacter) media.pause();
   }
 }));
 

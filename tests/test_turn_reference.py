@@ -61,7 +61,7 @@ def test_character_preparation_creates_idle_loop_for_every_mode():
     source = Path("app/orchestrator.py").read_text(encoding="utf-8")
     main = Path("app/main.py").read_text(encoding="utf-8")
 
-    assert 'folder / "character-idle.mp4"' in source
+    assert 'folder / f"character-idle-{index:03}.mp4"' in source
     assert 'folder / "character-idle-raw.mp4"' in source
     assert "Seamless idle loop" in source
     assert "_make_seamless_loop" in source
@@ -80,6 +80,8 @@ def test_character_preparation_creates_idle_loop_for_every_mode():
     assert '"closeup": 1.0' in source
     assert '"upper_body": 1.0' in source
     assert '"wide": 1.0' in source
+    assert "_add_idle_to_pool" in source
+    assert "IDLE_POOL_SIZE = 3" in source
     assert "session.idle_video_url" in source
     assert '/api/sessions/{session_id}/idle-video' in main
 

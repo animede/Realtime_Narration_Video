@@ -60,6 +60,7 @@ class NarrationSession(BaseModel):
     lip_sync_mode: str = "natural"
     idle_motion_profile: str = "wide"
     idle_liveliness: str = "lively"
+    idle_pool_size: int = 3
     camera_lock_enabled: bool = False
     video_seed: int = 1004
     video_steps: int = 4
@@ -74,6 +75,8 @@ class NarrationSession(BaseModel):
     character_prepared: bool = False
     idle_video_url: str | None = None
     idle_video_ready_at: float | None = None
+    idle_videos: list[str] = Field(default_factory=list)
+    idle_pool_next: int = 0
     character_preparation_seconds: float | None = None
     llm_started_at: float | None = None
     llm_first_delta_at: float | None = None

@@ -58,6 +58,14 @@
             <option value="strong" data-i18n="lipStrong">強い口動作（大きい開口）</option>
           </select>
         </label>
+        <label class="setup-setting"><span data-i18n="idlePoolSize">待機動画の本数</span>
+          <select name="idle_pool_size">
+            <option value="3" selected data-i18n="idlePool3">3本（登録が速い）</option>
+            <option value="4" data-i18n="idlePool4">4本</option>
+            <option value="5" data-i18n="idlePool5">5本（追い生成が減り会話と衝突しにくい）</option>
+          </select>
+          <small class="setting-help" data-i18n="idlePoolHint">多いほど登録に時間がかかりますが、待機中の追い生成頻度が下がります。</small>
+        </label>
         <label class="setup-setting"><span data-i18n="idleMotionProfile">アイドル動作（画像の構図）</span>
           <select name="idle_motion_profile">
             <option value="closeup" data-i18n="idleCloseup">顔アップ（自然な小動作）</option>
@@ -137,7 +145,8 @@
       <div class="status-row"><span id="status" data-i18n="idle">待機中</span><span id="buffer"></span></div>
       <div id="video-stack" class="video-stack">
         <img id="stage-character" class="stage-media" alt="設定したキャラクター" data-i18n-alt="configuredCharacter" hidden>
-        <video id="stage-idle" class="stage-media stage-idle" muted loop autoplay playsinline preload="auto" aria-label="待機中のキャラクター" data-i18n-aria-label="idleCharacter" hidden></video>
+        <video id="stage-idle" class="stage-media stage-idle" muted autoplay playsinline preload="auto" aria-label="待機中のキャラクター" data-i18n-aria-label="idleCharacter" hidden></video>
+        <video id="stage-idle-b" class="stage-media stage-idle" muted playsinline preload="auto" aria-label="待機中のキャラクター" data-i18n-aria-label="idleCharacter" hidden></video>
         <video id="player-a" class="speech-player active" controls playsinline preload="auto"></video>
         <video id="player-b" class="speech-player" playsinline preload="auto"></video>
       </div>
@@ -153,6 +162,6 @@
       <ol id="chunks"></ol>
     </section>
   </main>
-  <script src="/static/app.js?v=23"></script>
+  <script src="/static/app.js?v=26"></script>
 </body>
 </html>

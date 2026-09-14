@@ -16,7 +16,9 @@ def test_generated_idle_video_is_used_between_speech_clips():
     source = Path("app/static/app.js").read_text()
 
     assert 'id="stage-idle"' in html
-    assert "muted loop autoplay" in html
-    assert "data.idle_video_url" in source
+    assert "muted autoplay" in html
+    assert 'id="stage-idle-b"' in html
+    assert "absorbIdlePool" in source
+    assert "maybeExtendIdlePool" in source
     assert "showIdleStage()" in source
     assert "if (playingIndex === null) showIdleStage()" in source
