@@ -216,7 +216,12 @@ function resetIdlePool() {
 
 let lastUserActivity = Date.now();
 ["pointerdown", "keydown"].forEach(type =>
-  document.addEventListener(type, () => { lastUserActivity = Date.now(); }, {passive: true}));
+  document.addEventListener(type, () => {
+    lastUserActivity = Date.now();
+    // 休止中ならクリック/キー入力の瞬間に追い生成を再開する
+    // (次のクリップ終了を待たない)。条件はmaybeExtend側で検査される。
+    maybeExtendIdlePool();
+  }, {passive: true}));
 const IDLE_REFRESH_TIMEOUT_MS = 5 * 60 * 1000;
 
 document.addEventListener("visibilitychange", () => {
