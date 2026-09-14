@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+import binascii
 import re
 import shutil
 from pathlib import Path
@@ -79,6 +81,8 @@ async def create_session(
     idle_motion_profile: str = Form("wide"),
     idle_liveliness: str = Form("lively"),
     idle_pool_size: int = Form(3),
+    turn_anchor_mode: str = Form("speaking"),
+    turn_end_mode: str = Form("free"),
     camera_lock_enabled: bool = Form(False),
     video_seed: int = Form(1004),
     video_steps: int = Form(4),
@@ -113,6 +117,10 @@ async def create_session(
         raise HTTPException(400, "待機の動き設定が不正です")
     if not 3 <= idle_pool_size <= 5:
         raise HTTPException(400, "待機動画の本数は3～5にしてください")
+    if turn_anchor_mode not in {"speaking", "idle_frame"}:
+        raise HTTPException(400, "会話の開始画像設定が不正です")
+    if turn_end_mode not in {"free", "return_idle"}:
+        raise HTTPException(400, "会話の終了姿勢設定が不正です")
     if not 0 <= video_seed <= 2_147_483_647:
         raise HTTPException(400, "seedは0～2147483647で指定してください")
     if not 1 <= video_steps <= 12:
@@ -127,7 +135,8 @@ async def create_session(
         voice_id=voice_id, video_profile=video_profile,
         character_mode=character_mode, lip_sync_mode=lip_sync_mode,
         idle_motion_profile=idle_motion_profile, idle_liveliness=idle_liveliness,
-        idle_pool_size=idle_pool_size,
+        idle_pool_size=idle_pool_size, turn_anchor_mode=turn_anchor_mode,
+        turn_end_mode=turn_end_mode,
         camera_lock_enabled=camera_lock_enabled,
         video_seed=video_seed,
         video_steps=video_steps, modality_scale_enabled=modality_scale_enabled,
@@ -157,6 +166,9 @@ async def create_session(
 
 class ChatRequest(BaseModel):
     text: str
+    # 待機フレーム連続モード用: フロントがキャプチャした現在の待機フレーム
+    # (data:image/png;base64,... 形式)。ターン先頭チャンクの参照画像になる。
+    turn_anchor: str | None = None
 
 
 class SessionSettingsUpdate(BaseModel):
@@ -165,6 +177,8 @@ class SessionSettingsUpdate(BaseModel):
     action_level: str | None = None
     lip_sync_mode: str | None = None
     idle_liveliness: str | None = None
+    turn_anchor_mode: str | None = None
+    turn_end_mode: str | None = None
     camera_lock_enabled: bool | None = None
     conversation_language: str | None = None
     voice_id: int | None = None
@@ -187,6 +201,10 @@ async def update_session_settings(session_id: str, request: SessionSettingsUpdat
         raise HTTPException(400, "リップシンク設定が不正です")
     if "idle_liveliness" in values and values["idle_liveliness"] not in {"calm", "lively"}:
         raise HTTPException(400, "待機の動き設定が不正です")
+    if "turn_anchor_mode" in values and values["turn_anchor_mode"] not in {"speaking", "idle_frame"}:
+        raise HTTPException(400, "会話の開始画像設定が不正です")
+    if "turn_end_mode" in values and values["turn_end_mode"] not in {"free", "return_idle"}:
+        raise HTTPException(400, "会話の終了姿勢設定が不正です")
     if "conversation_language" in values and values["conversation_language"] not in {"auto", "ja", "en"}:
         raise HTTPException(400, "会話言語が不正です")
     if "video_seed" in values and not 0 <= values["video_seed"] <= 2_147_483_647:
@@ -225,6 +243,24 @@ async def regenerate_idle(session_id: str):
     return session
 
 
+def save_turn_anchor(session, raw: str | None) -> Path | None:
+    """フロントがキャプチャした待機フレームをターン参照用に保存する。"""
+    if not raw or session.turn_anchor_mode != "idle_frame":
+        return None
+    prefix = "base64,"
+    index = raw.find(prefix)
+    payload = raw[index + len(prefix):] if index >= 0 else raw
+    if len(payload) > 8_000_000:
+        raise HTTPException(400, "開始画像が大きすぎます")
+    try:
+        data = base64.b64decode(payload, validate=True)
+    except (ValueError, binascii.Error) as exc:
+        raise HTTPException(400, "開始画像のデコードに失敗しました") from exc
+    target = settings.data_dir / session.id / "turn-anchor.png"
+    target.write_bytes(data)
+    return target
+
+
 @app.post("/api/sessions/{session_id}/messages", response_model=NarrationSession, status_code=202)
 async def send_message(session_id: str, request: ChatRequest):
     session = get_session_or_404(session_id)
@@ -247,9 +283,10 @@ async def send_message(session_id: str, request: ChatRequest):
     session.error = None
     session.messages.append(ChatMessage(role="user", content=text))
     orchestrator.save(session)
+    turn_anchor = save_turn_anchor(session, request.turn_anchor)
     # 進行中のアイドル生成があれば即中断して会話生成を優先する。
     await orchestrator.interrupt_idle(session_id)
-    orchestrator.chat(session, character, turn_video_instruction)
+    orchestrator.chat(session, character, turn_video_instruction, turn_anchor=turn_anchor)
     return session
 
 
@@ -272,8 +309,9 @@ async def narrate_text(session_id: str, request: ChatRequest):
     session.error = None
     session.assistant_text = ""
     orchestrator.save(session)
+    turn_anchor = save_turn_anchor(session, request.turn_anchor)
     await orchestrator.interrupt_idle(session_id)
-    orchestrator.narrate(session, character, text)
+    orchestrator.narrate(session, character, text, turn_anchor=turn_anchor)
     return session
 
 

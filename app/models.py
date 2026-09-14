@@ -22,6 +22,7 @@ class SessionStatus(StrEnum):
 class Chunk(BaseModel):
     index: int
     text: str
+    turn_final: bool = False
     status: str = "queued"
     duration: float | None = None
     speech_duration: float | None = None
@@ -61,6 +62,8 @@ class NarrationSession(BaseModel):
     idle_motion_profile: str = "wide"
     idle_liveliness: str = "lively"
     idle_pool_size: int = 3
+    turn_anchor_mode: str = "speaking"
+    turn_end_mode: str = "free"
     camera_lock_enabled: bool = False
     video_seed: int = 1004
     video_steps: int = 4

@@ -51,6 +51,8 @@ const messages = {
     idleLiveliness: "待機の動き", idleLively: "活発（継ぎ目はクロスフェード）", idleCalm: "静か（完全ループ）",
     idlePoolSize: "待機動画の本数", idlePool3: "3本（登録が速い）", idlePool4: "4本", idlePool5: "5本（追い生成が減り会話と衝突しにくい）", idlePoolHint: "多いほど登録に時間がかかりますが、待機中の追い生成頻度が下がります。",
     cameraLock: "カメラロック（待機動画）", cameraLockOn: "有効（ドリフト固定）", cameraLockOff: "無効（生成のまま）",
+    turnAnchorMode: "会話の開始画像", turnAnchorSpeaking: "発話アンカー（口動作優先）", turnAnchorIdle: "待機フレーム（連続性優先）",
+    turnEndMode: "会話の終了姿勢", turnEndFree: "自由（従来・動き優先）", turnEndReturn: "待機ポーズへ戻る（連続性優先）",
     setCharacter: "キャラクターを設定", updateSettings: "設定を更新", configured: "設定済み", idleCharacter: "待機中のキャラクター",
     narrationLabel: "朗読させたい文章", narrationPlaceholder: "文章を入力・貼り付け、またはTXTファイルをドロップ",
     selectTextFile: "TXTを選択", narrate: "朗読", idle: "待機中", configuredCharacter: "設定したキャラクター",
@@ -94,6 +96,8 @@ const messages = {
     idleLiveliness: "Idle motion", idleLively: "Lively (crossfaded loop seam)", idleCalm: "Calm (perfect loop)",
     idlePoolSize: "Idle clip count", idlePool3: "3 (faster setup)", idlePool4: "4", idlePool5: "5 (fewer refreshes, fewer chat conflicts)", idlePoolHint: "More clips take longer to set up but refresh less often while idle.",
     cameraLock: "Camera lock (idle video)", cameraLockOn: "Enabled (pins drift)", cameraLockOff: "Disabled (as generated)",
+    turnAnchorMode: "Turn start image", turnAnchorSpeaking: "Speaking anchor (best lip motion)", turnAnchorIdle: "Idle frame (best continuity)",
+    turnEndMode: "Turn end pose", turnEndFree: "Free (default, best motion)", turnEndReturn: "Return to idle pose (best continuity)",
     setCharacter: "Set character", updateSettings: "Update settings", configured: "Configured", idleCharacter: "Idle character",
     narrationLabel: "Text to narrate", narrationPlaceholder: "Type or paste text, or drop a TXT file",
     selectTextFile: "Choose TXT", narrate: "Narrate", idle: "Idle", configuredCharacter: "Configured character",
@@ -197,6 +201,7 @@ function resetIdlePool() {
   idlePoolUrls = [];
   currentIdleSrc = null;
   idleExtendInFlight = false;
+  idleFrozen = false;
   idleAdvances = 0;
   idleLastExtendAdvance = -99;
   idleStages.forEach(media => {
@@ -209,11 +214,29 @@ function resetIdlePool() {
   activeIdleStage = 0;
 }
 
+let lastUserActivity = Date.now();
+["pointerdown", "keydown"].forEach(type =>
+  document.addEventListener(type, () => { lastUserActivity = Date.now(); }, {passive: true}));
+const IDLE_REFRESH_TIMEOUT_MS = 5 * 60 * 1000;
+
+document.addEventListener("visibilitychange", () => {
+  // 非表示タブが待機映像の追い生成でGPUを占有し続けないようにする。
+  if (document.hidden) {
+    if (idleShown) idleStages[activeIdleStage].pause();
+  } else if (idleShown && !idleFrozen) {
+    lastUserActivity = Date.now();
+    idleStages[activeIdleStage].play().catch(() => {});
+  }
+});
+
 function maybeExtendIdlePool() {
   // ユーザー設計: プール1周(idle_pool_size本)につき1本だけリフレッシュする
   // (毎クリップ生成するとアイドル中ずっとGPUが回り続けてしまう。本数を
   // 増やすほど追い生成頻度=会話との衝突確率が下がる)。
   if (!sessionId || idleExtendInFlight) return;
+  // タブ非表示・5分間無操作のときは新作を作らない(手持ちの巡回再生は続く)。
+  if (document.hidden) return;
+  if (Date.now() - lastUserActivity > IDLE_REFRESH_TIMEOUT_MS) return;
   if (idleAdvances - idleLastExtendAdvance < idlePoolSize) return;
   idleLastExtendAdvance = idleAdvances;
   idleExtendInFlight = true;
@@ -224,6 +247,24 @@ function maybeExtendIdlePool() {
     })
     .catch(() => {})
     .finally(() => { idleExtendInFlight = false; });
+}
+
+let idleFrozen = false;
+
+function captureTurnAnchor() {
+  // 連続性優先モード: 送信瞬間の待機フレームをキャプチャし、待機映像を
+  // そのフレームで静止させる(先頭動画が同じポーズから始まる)。
+  const data = new FormData(form);
+  if (data.get("turn_anchor_mode") !== "idle_frame") return null;
+  const active = idleStages[activeIdleStage];
+  if (!idleShown || active.readyState < 2 || !active.videoWidth) return null;
+  const canvas = document.createElement("canvas");
+  canvas.width = active.videoWidth;
+  canvas.height = active.videoHeight;
+  canvas.getContext("2d").drawImage(active, 0, 0);
+  idleStages.forEach(media => media.pause());
+  idleFrozen = true;
+  return canvas.toDataURL("image/png");
 }
 
 function swapIdleTo(src) {
@@ -272,7 +313,7 @@ idleStages.forEach(media => media.addEventListener("ended", advanceIdle));
 const liveSettingNames = [
   "concept", "video_instruction", "action_level", "lip_sync_mode", "conversation_language", "voice_id",
   "video_seed", "video_steps", "modality_scale_enabled", "idle_liveliness",
-  "camera_lock_enabled", "target_chunk_seconds", "startup_buffer_chunks"
+  "camera_lock_enabled", "turn_anchor_mode", "turn_end_mode", "target_chunk_seconds", "startup_buffer_chunks"
 ];
 const profileSizes = {
   "16fps-resolution": [640, 352], "16fps-5x3": [640, 384], "16fps-3x2": [576, 384],
@@ -470,8 +511,10 @@ narrationButton.addEventListener("click", async () => {
   chatForm.querySelector("button").disabled = true;
   try {
     await syncLiveSettings();
+    const turnAnchor = captureTurnAnchor();
     const response = await fetch(`/api/sessions/${sessionId}/narrations`, {
-      method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({text})
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({text, turn_anchor: turnAnchor})
     });
     const data = await response.json();
     if (!response.ok) throw new Error(data.detail || `HTTP ${response.status}`);
@@ -497,8 +540,10 @@ chatForm.addEventListener("submit", async (event) => {
   narrationButton.disabled = true;
   try {
     await syncLiveSettings();
+    const turnAnchor = captureTurnAnchor();
     const response = await fetch(`/api/sessions/${sessionId}/messages`, {
-      method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({text})
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({text, turn_anchor: turnAnchor})
     });
     const data = await response.json();
     if (!response.ok) throw new Error(data.detail || `HTTP ${response.status}`);
@@ -568,6 +613,7 @@ function processSession(session) {
   preloadFollowing(session.chunks);
   advanceAfterSpeech(session.chunks);
   if (["completed", "failed", "cancelled"].includes(session.status)) {
+    idleFrozen = false;
     form.querySelector("button").disabled = false;
     chatForm.querySelector("button").disabled = false;
     narrationButton.disabled = false;
@@ -593,11 +639,12 @@ function showIdleStage() {
     active.currentTime = 0;
   }
   active.classList.add("visible");
-  active.play().catch(() => {});
+  if (!idleFrozen) active.play().catch(() => {});
 }
 
 function hideIdleStage() {
   idleShown = false;
+  idleFrozen = false;
   stageCharacter.classList.remove("visible");
   idleStages.forEach(media => media.classList.remove("visible"));
 }

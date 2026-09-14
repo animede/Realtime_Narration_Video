@@ -36,7 +36,8 @@ The video was compressed for GitHub and therefore looks slightly worse than the 
 - Dynamic startup buffering and measured transition-gap display
 - Short utterances are generated as five-second clips and advance after speech when the next clip is ready. Speech longer than five seconds keeps the final video frame visible while the original TTS audio finishes
 - The first clip of every turn uses a lower resolution with the same framing; later clips use the selected resolution. Steps are configurable in the UI (default 4; the first clip uses `min(4, steps)`)
-- Idle playback is a playlist: setup generates 3–5 clips (selectable) that all start and end at the input pose and play in sequence. One fresh clip is generated per playback cycle, and an incoming chat message interrupts idle generation immediately so conversation wins the GPU
+- Idle playback is a playlist: setup generates 3–5 clips (selectable) that all start and end at the input pose and play in sequence. One fresh clip is generated per playback cycle, an incoming chat message interrupts idle generation immediately so conversation wins the GPU, and refreshing pauses while the tab is hidden or after five minutes of inactivity
+- Optional turn continuity: start the turn from the frozen idle frame captured at send time, and/or FLF-anchor the final chunk back to the idle start pose — with both enabled the idle→talk→idle cycle is pose-continuous (defaults keep the classic lip-motion-first behaviour)
 - Seed 1004, the most reliable observed photorealistic articulation seed, is the default and can be changed in the UI for every photorealistic chunk
 - Photorealistic anchor preparation always uses `modality_scale=1.3`; applying it during conversation is a UI toggle ("Mouth emphasis", default off for speed — distilled 4-step generation was verified to keep mouth articulation)
 - At the beginning of each turn, the original character image covers the previous turn until the new video starts

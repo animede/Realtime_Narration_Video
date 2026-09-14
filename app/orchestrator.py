@@ -85,17 +85,20 @@ class Orchestrator:
         self.sessions[session.id] = session
 
     def chat(self, session: NarrationSession, character: Path,
-             turn_video_instruction: str = "") -> None:
+             turn_video_instruction: str = "",
+             turn_anchor: Path | None = None) -> None:
         self.sessions[session.id] = session
         self.tasks[session.id] = asyncio.create_task(
-            self._run_chat(session, character, turn_video_instruction=turn_video_instruction)
+            self._run_chat(session, character, turn_video_instruction=turn_video_instruction,
+                           turn_anchor=turn_anchor)
         )
 
-    def narrate(self, session: NarrationSession, character: Path, text: str) -> None:
+    def narrate(self, session: NarrationSession, character: Path, text: str,
+                turn_anchor: Path | None = None) -> None:
         """Speak supplied text directly without sending it to the LLM."""
         self.sessions[session.id] = session
         self.tasks[session.id] = asyncio.create_task(
-            self._run_chat(session, character, narration_text=text)
+            self._run_chat(session, character, narration_text=text, turn_anchor=turn_anchor)
         )
 
     def is_running(self, session_id: str) -> bool:
@@ -418,7 +421,8 @@ class Orchestrator:
 
     async def _run_chat(self, session: NarrationSession, character: Path,
                         narration_text: str | None = None,
-                        turn_video_instruction: str = "") -> None:
+                        turn_video_instruction: str = "",
+                        turn_anchor: Path | None = None) -> None:
         folder = self.settings.data_dir / session.id
         gateway = GatewayClient(self.settings.gateway_url, self.settings.gateway_preset,
                                 self.settings.poll_interval)
@@ -488,6 +492,11 @@ class Orchestrator:
                 if (first_of_turn and complete_sentence) or parts_duration >= session.target_chunk_seconds:
                     await emit()
             await emit()
+            # ここでターンの最終チャンクが確定する。動画生成はTTSより遅いので、
+            # このフラグは通常まだ生成前のチャンクに立つ(間に合わなければ従来
+            # どおり末尾アンカーなしで生成されるだけ — 劣化は起きない)。
+            if session.chunks:
+                session.chunks[-1].turn_final = True
             await video_queue.put(None)
 
         async def generate_video() -> None:
@@ -533,7 +542,15 @@ class Orchestrator:
                 chunk.video_started_at = time()
                 session.status = SessionStatus.GENERATING
                 self.save(session)
-                reference = photoreal_reference() if session.character_mode == "photoreal" else chain_path
+                if (first_video_of_turn and turn_anchor is not None
+                        and session.turn_anchor_mode == "idle_frame"
+                        and turn_anchor.is_file()):
+                    # 連続性優先: 送信時に表示していた待機フレームから話し始める。
+                    # 実写で口が開きにくくなったら「会話の開始画像」を従来の
+                    # 発話アンカーに戻すこと(閉口参照×実写プライアの既知問題)。
+                    reference = turn_anchor
+                else:
+                    reference = photoreal_reference() if session.character_mode == "photoreal" else chain_path
                 image_id = await image_asset(reference)
                 audio_path = folder / f"chunk-{chunk.index:03}.wav"
                 condition_audio = folder / f"chunk-{chunk.index:03}-condition.wav"
@@ -562,6 +579,13 @@ class Orchestrator:
                 chunk.generated_frames = actual_frames
                 chunk.audio_modality_scale = None
                 chunk.modality_scale = actual_modality_scale
+                # ターン終い(ユーザー案): 最終チャンクの末尾をキャラクター入力
+                # 画像(=待機クリップの開始ポーズ)へFLF錨止めし、会話→待機の
+                # 切替を同ポーズにする。末尾錨止めは動きを抑える副作用がある
+                # ため設定で切替(既定=従来)。
+                end_anchor_id = None
+                if (chunk.turn_final and session.turn_end_mode == "return_idle"):
+                    end_anchor_id = await image_asset(character)
                 result = await gateway.generate(
                     image_id, audio_id, self._prompt(
                         chunk.text, session.concept, session.character_mode, session.action_level,
@@ -569,6 +593,7 @@ class Orchestrator:
                     ),
                     actual_seed, actual_profile, actual_steps, actual_frames,
                     actual_modality_scale,
+                    last_image_id=end_anchor_id,
                 )
                 first_video_of_turn = False
                 raw = folder / f"chunk-{chunk.index:03}-raw.mp4"

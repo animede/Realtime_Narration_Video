@@ -112,6 +112,18 @@
               <option value="calm" data-i18n="idleCalm">静か（完全ループ）</option>
             </select>
           </label>
+          <label class="live-setting"><span data-i18n="turnAnchorMode">会話の開始画像</span>
+            <select name="turn_anchor_mode">
+              <option value="speaking" selected data-i18n="turnAnchorSpeaking">発話アンカー（口動作優先）</option>
+              <option value="idle_frame" data-i18n="turnAnchorIdle">待機フレーム（連続性優先）</option>
+            </select>
+          </label>
+          <label class="live-setting"><span data-i18n="turnEndMode">会話の終了姿勢</span>
+            <select name="turn_end_mode">
+              <option value="free" selected data-i18n="turnEndFree">自由（従来・動き優先）</option>
+              <option value="return_idle" data-i18n="turnEndReturn">待機ポーズへ戻る（連続性優先）</option>
+            </select>
+          </label>
           <label class="live-setting"><span data-i18n="cameraLock">カメラロック（待機動画）</span>
             <select name="camera_lock_enabled">
               <option value="true" data-i18n="cameraLockOn">有効（ドリフト固定）</option>
@@ -162,6 +174,6 @@
       <ol id="chunks"></ol>
     </section>
   </main>
-  <script src="/static/app.js?v=26"></script>
+  <script src="/static/app.js?v=29"></script>
 </body>
 </html>
