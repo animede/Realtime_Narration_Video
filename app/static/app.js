@@ -53,7 +53,7 @@ const messages = {
     cameraLock: "カメラロック（待機動画）", cameraLockOn: "有効（ドリフト固定）", cameraLockOff: "無効（生成のまま）",
     turnAnchorMode: "会話の開始画像", turnAnchorSpeaking: "発話アンカー（口動作優先）", turnAnchorIdle: "待機フレーム（連続性優先）",
     turnEndMode: "会話の終了姿勢", turnEndFree: "自由（従来・動き優先）", turnEndReturn: "待機ポーズへ戻る（連続性優先）",
-    setCharacter: "キャラクターを設定", updateSettings: "設定を更新", configured: "設定済み", idleCharacter: "待機中のキャラクター",
+    setCharacter: "キャラクターを設定", updateSettings: "設定を更新", configured: "設定済み", configuring: "設定中…", idleCharacter: "待機中のキャラクター",
     narrationLabel: "朗読させたい文章", narrationPlaceholder: "文章を入力・貼り付け、またはTXTファイルをドロップ",
     selectTextFile: "TXTを選択", narrate: "朗読", idle: "待機中", configuredCharacter: "設定したキャラクター",
     captionPlaceholder: "生成を開始すると、ここに読み上げ内容が表示されます。",
@@ -98,7 +98,7 @@ const messages = {
     cameraLock: "Camera lock (idle video)", cameraLockOn: "Enabled (pins drift)", cameraLockOff: "Disabled (as generated)",
     turnAnchorMode: "Turn start image", turnAnchorSpeaking: "Speaking anchor (best lip motion)", turnAnchorIdle: "Idle frame (best continuity)",
     turnEndMode: "Turn end pose", turnEndFree: "Free (default, best motion)", turnEndReturn: "Return to idle pose (best continuity)",
-    setCharacter: "Set character", updateSettings: "Update settings", configured: "Configured", idleCharacter: "Idle character",
+    setCharacter: "Set character", updateSettings: "Update settings", configured: "Configured", configuring: "Setting up…", idleCharacter: "Idle character",
     narrationLabel: "Text to narrate", narrationPlaceholder: "Type or paste text, or drop a TXT file",
     selectTextFile: "Choose TXT", narrate: "Narrate", idle: "Idle", configuredCharacter: "Configured character",
     captionPlaceholder: "Spoken text will appear here after generation starts.",
@@ -504,6 +504,7 @@ form.addEventListener("submit", async (event) => {
   event.preventDefault();
   const button = form.querySelector("button");
   button.disabled = true;
+  button.textContent = t("configuring");
   statusLabel.textContent = t("preparingModel");
   try {
     const response = await fetch("/api/sessions", {method: "POST", body: new FormData(form)});
@@ -532,6 +533,7 @@ form.addEventListener("submit", async (event) => {
   } catch (error) {
     statusLabel.textContent = t("error", error.message);
     button.disabled = false;
+    button.textContent = sessionId ? t("updateSettings") : t("setCharacter");
   }
 });
 
