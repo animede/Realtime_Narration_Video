@@ -145,7 +145,7 @@ function applyLanguage() {
   if (latestSession) processSession(latestSession);
   const settingsButton = form.querySelector("button");
   if (sessionId && !latestSession?.error) {
-    settingsButton.textContent = t(settingsDirty ? "updateSettings" : "configured");
+    settingsButton.textContent = t("configured");
   }
 }
 
@@ -438,7 +438,7 @@ function markSettingsDirty() {
   const busy = latestSession && ["chatting", "synthesizing", "generating", "playable"].includes(latestSession.status);
   settingsDirty = true;
   button.disabled = Boolean(busy);
-  button.textContent = sessionId ? t("updateSettings") : t("setCharacter");
+  button.textContent = sessionId ? t("configured") : t("setCharacter");
 }
 
 form.querySelectorAll(".setup-setting input, .setup-setting select").forEach(control => {
@@ -534,7 +534,7 @@ form.addEventListener("submit", async (event) => {
   } catch (error) {
     statusLabel.textContent = t("error", error.message);
     button.disabled = false;
-    button.textContent = sessionId ? t("updateSettings") : t("setCharacter");
+    button.textContent = sessionId ? t("configured") : t("setCharacter");
   }
 });
 
