@@ -132,11 +132,18 @@ class GatewayClient:
                 pass  # 中断は最善努力 — 失敗しても生成が続くだけ
 
     async def load_backend(self) -> dict:
-        """Load the configured LTX backend early; an identical active setup is a no-op."""
+        """Load the configured LTX backend early; an identical active setup is a no-op.
+
+        `strategy="coresident"` keeps any other backend (H3) loaded instead of evicting
+        it. Without this the gateway defaults to `"process"`, which stops H3 and
+        restarts LTX — we only need LTX's weights resident, not the GPU to ourselves.
+        Generation stays serialised by the gateway's own execution gate.
+        """
         async with httpx.AsyncClient(timeout=180) as client:
             response = await client.post(
                 f"{self.base_url}/api/v1/backend/load",
-                json={"backend": "ltx25", "preset": self.preset},
+                json={"backend": "ltx25", "preset": self.preset,
+                      "strategy": "coresident"},
             )
         if response.is_error:
             raise GatewayError(f"動画モデル準備失敗 HTTP {response.status_code}: {response.text[:500]}")
