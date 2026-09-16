@@ -110,6 +110,44 @@ class GatewayClient:
         self.last_job_id: str | None = None
         self.cancel_requested = False
 
+    # -- リアルタイム優先リース(会話セッション宣言) --------------------------
+    # 会話ターンの間これを保持すると、gateway は他バックエンド(H3)の生成・load・
+    # unload を入口で 409 にする。H3 の t2va は約25秒かかり途中で止められないため、
+    # ターン開始「前」に宣言しておかないと LTX の 4.8 秒予算が守れない。
+    # 全て最善努力: リース API が無い古い gateway でも会話は普通に動く
+    # (その場合は先に始まった生成が勝つ、従来の挙動に戻るだけ)。
+
+    async def acquire_lease(self, lease_id: str | None = None,
+                            ttl_s: float = 60.0) -> str | None:
+        """リースを取得(lease_id 指定時は延長)。返り値は現在の lease_id。
+
+        他ターンが release した直後の renew は新しいリースとして受理されるため、
+        呼び出し側は**返ってきた id で保持中の id を更新する**こと。
+        """
+        body: dict = {"backend": "ltx25", "ttl_s": ttl_s}
+        if lease_id:
+            body["lease_id"] = lease_id
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                response = await client.post(
+                    f"{self.base_url}/api/v1/realtime/lease", json=body)
+            if response.is_error:
+                return None
+            return response.json().get("lease_id")
+        except httpx.HTTPError:
+            return None
+
+    async def release_lease(self, lease_id: str | None) -> None:
+        if not lease_id:
+            return
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                await client.delete(
+                    f"{self.base_url}/api/v1/realtime/lease",
+                    params={"lease_id": lease_id})
+        except httpx.HTTPError:
+            pass  # TTL が安全網なので、解放漏れでも最大60秒で自動失効する
+
     async def interrupt(self) -> None:
         """Ask the backend to stop this client's in-flight job.
 

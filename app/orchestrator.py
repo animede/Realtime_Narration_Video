@@ -432,6 +432,24 @@ class Orchestrator:
         folder = self.settings.data_dir / session.id
         gateway = GatewayClient(self.settings.gateway_url, self.settings.gateway_preset,
                                 self.settings.poll_interval)
+        # 会話ターンの間、リアルタイム優先リースを保持する(H3 などの長尺ジョブを
+        # gateway が入口で 409 にする)。ターンの頭で取得しないと、直前に滑り込んだ
+        # H3 t2va(約25秒・中断不可)で最初のチャンクが丸ごと遅れる。renew は
+        # チャンク進行と無関係に 20 秒周期(TTL 60秒の 1/3)で回す — チャンク間隔は
+        # 負荷で伸びるので同期させない。**待機プール補充ではリースを取らない**こと
+        # (取ると H3 が永久に回らなくなる)。全て最善努力で、リース API の無い
+        # gateway でも会話は従来どおり動く。
+        lease_id = await gateway.acquire_lease()
+
+        async def renew_lease() -> None:
+            nonlocal lease_id
+            while True:
+                await asyncio.sleep(20.0)
+                # 他ターンとリースを共有していて先に release された場合、renew は
+                # 新しいリースとして受理される(id が変わる)ので必ず取り直す
+                lease_id = await gateway.acquire_lease(lease_id)
+
+        lease_renewer = asyncio.create_task(renew_lease())
         llm = None if narration_text is not None else StreamingChatClient(
             self.settings.llm_url, self.settings.llm_model, self.settings.llm_api_key
         )
@@ -696,6 +714,11 @@ class Orchestrator:
             if pending:
                 pending.status, pending.error = "failed", str(leaf)
             self.save(session)
+        finally:
+            # ターン終了 = 会話セッション宣言の解除。キャンセル・失敗経路でも必ず通す
+            # (解放漏れは TTL 60 秒で自動失効するが、その間 H3 が無駄に待つ)。
+            lease_renewer.cancel()
+            await gateway.release_lease(lease_id)
 
     @staticmethod
     def _prompt(text: str, concept: str, character_mode: str = "photoreal",
