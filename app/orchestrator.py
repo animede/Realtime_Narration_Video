@@ -379,10 +379,13 @@ class Orchestrator:
             _, _, _, preparation_frames = VIDEO_PROFILES[preparation_profile]
             # The closed-mouth reference for natural speech and all
             # articulation anchors comes from the camera-locked clip start.
-            # 初期プールとして3本生成する(全て入力ポーズで始まり終わるので
-            # フロント側で順次再生し、残り2本で1本追い足す — ユーザー発案)。
+            # 初期プールは常に3本だけ生成する(登録を速くするため。ユーザー発案)。
+            # idle_pool_size が 4〜7 でも前払いはしない — _add_idle_to_pool は
+            # 「追加→設定数を超えた分だけ最古を削除」なので、フロントの追い生成
+            # (プール1周につき1本)がそのまま積み増しとして働き、満杯になるまで
+            # 削除は発火しない。満杯後は従来どおり1本入替の回転になる。
             neutral = folder / "character-neutral.png"
-            for pool_index in range(max(session.idle_pool_size, 3)):
+            for pool_index in range(3):
                 await self._add_idle_to_pool(
                     session, gateway, folder, character,
                     neutral_target=neutral if pool_index == 0 else None,

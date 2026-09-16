@@ -119,8 +119,8 @@ async def create_session(
         raise HTTPException(400, "アイドル動作設定が不正です")
     if idle_liveliness not in {"calm", "lively"}:
         raise HTTPException(400, "待機の動き設定が不正です")
-    if not 3 <= idle_pool_size <= 5:
-        raise HTTPException(400, "待機動画の本数は3～5にしてください")
+    if not 3 <= idle_pool_size <= 7:
+        raise HTTPException(400, "待機動画の本数は3～7にしてください")
     if turn_anchor_mode not in {"speaking", "idle_frame"}:
         raise HTTPException(400, "会話の開始画像設定が不正です")
     if turn_end_mode not in {"free", "return_idle"}:

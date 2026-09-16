@@ -48,7 +48,7 @@ const messages = {
     speakerId: "話者ID", videoSeed: "動画seed", chunkSeconds: "チャンク秒数", preloadCount: "先読み数",
     videoSteps: "生成steps", modalityScale: "口動作強調（scale 1.3）", scaleOn: "有効", scaleOff: "無効（高速）",
     idleLiveliness: "待機の動き", idleLively: "活発（動き優先・既定）", idleCalm: "静か（完全ループ）",
-    idlePoolSize: "待機動画の本数", idlePool3: "3本（登録が速い）", idlePool4: "4本", idlePool5: "5本（追い生成が減り会話と衝突しにくい）", idlePoolHint: "多いほど登録に時間がかかりますが、待機中の追い生成頻度が下がります。",
+    idlePoolSize: "待機動画の本数", idlePool3: "3本（登録が速い）", idlePool4: "4本", idlePool5: "5本（追い生成が減り会話と衝突しにくい）", idlePool6: "6本", idlePool7: "7本（追い生成が最少・ランダム再生）", idlePoolHint: "初期登録は常に3本だけ生成し、待機中に1本ずつ設定数まで積み増します。多いほど追い生成の頻度が下がり、6本以上はランダム順で再生します。",
     cameraLock: "カメラロック", cameraLockOn: "有効（ドリフト固定）", cameraLockOff: "無効（生成のまま）",
     turnAnchorMode: "会話開始画像", turnAnchorSpeaking: "発話アンカー（口動作優先）", turnAnchorIdle: "待機フレーム（連続性優先）",
     turnEndMode: "会話終了姿勢", turnEndFree: "自由（従来・動き優先）", turnEndReturn: "待機ポーズへ戻る（連続性優先）",
@@ -92,7 +92,7 @@ const messages = {
     speakerId: "Speaker ID", videoSeed: "Video seed", chunkSeconds: "Chunk seconds", preloadCount: "Startup buffer",
     videoSteps: "Video steps", modalityScale: "Mouth emphasis (scale 1.3)", scaleOn: "Enabled", scaleOff: "Disabled (fast)",
     idleLiveliness: "Idle motion", idleLively: "Lively (more motion, default)", idleCalm: "Calm (perfect loop)",
-    idlePoolSize: "Idle clip count", idlePool3: "3 (faster setup)", idlePool4: "4", idlePool5: "5 (fewer refreshes, fewer chat conflicts)", idlePoolHint: "More clips take longer to set up but refresh less often while idle.",
+    idlePoolSize: "Idle clip count", idlePool3: "3 (faster setup)", idlePool4: "4", idlePool5: "5 (fewer refreshes, fewer chat conflicts)", idlePool6: "6", idlePool7: "7 (fewest refreshes, random playback)", idlePoolHint: "Setup always generates just 3 clips; the pool then grows one clip at a time while idle. Larger pools refresh less often, and 6+ clips play in random order.",
     cameraLock: "Camera lock", cameraLockOn: "Enabled (pins drift)", cameraLockOff: "Disabled (as generated)",
     turnAnchorMode: "Turn start image", turnAnchorSpeaking: "Speaking anchor (best lip motion)", turnAnchorIdle: "Idle frame (best continuity)",
     turnEndMode: "Turn end pose", turnEndFree: "Free (default, best motion)", turnEndReturn: "Return to idle pose (best continuity)",
@@ -346,6 +346,15 @@ function advanceIdle() {
     // 新作待ちの間はプールを巡回再生する(全クリップが同ポーズで始まり
     // 終わるので、どの順で繋いでも切替は自然)。
     idleQueue = idlePoolUrls.filter(src => src !== currentIdleSrc);
+    // プールが6本以上のときはランダム順にする(ユーザー発案)。順番再生だと
+    // 本数が増えるほど周回パターンが見えやすくなるため。直前クリップは
+    // 上の filter で既に除外されている(連続同一は起きない)。
+    if (idlePoolUrls.length > 5) {
+      for (let i = idleQueue.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [idleQueue[i], idleQueue[j]] = [idleQueue[j], idleQueue[i]];
+      }
+    }
   }
   maybeExtendIdlePool();
   const next = idleQueue.shift();
