@@ -18,6 +18,7 @@ class Settings:
     target_chunk_seconds: float = float(os.getenv("TARGET_CHUNK_SECONDS", "5.0"))
     startup_buffer_chunks: int = int(os.getenv("STARTUP_BUFFER_CHUNKS", "1"))
     poll_interval: float = float(os.getenv("JOB_POLL_INTERVAL", "0.1"))
+    cors_origins: str = os.getenv("CORS_ORIGINS", "*").strip()
 
 
 settings = Settings()
