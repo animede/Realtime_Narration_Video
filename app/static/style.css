@@ -93,3 +93,6 @@ main.settings-hidden .input-panel { display: none; }
 #chunks .playable { color: #70e6ad; }
 #chunks .failed { color: #ff7f91; }
 @media (max-width: 820px) { main { grid-template-columns: 1fr; } .options { grid-template-columns: 1fr; } .options > * { grid-column: auto; } }
+
+/* チャンクのダウンロードリンク */
+#chunk-list a.chunk-dl, .chunk-dl { margin-left: 8px; font-weight: bold; font-size: 12px; }

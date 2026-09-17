@@ -584,10 +584,52 @@ def chunk_file(session_id: str, index: int, suffix: str) -> Path:
 
 
 @app.get("/api/sessions/{session_id}/chunks/{index}/audio")
-async def chunk_audio(session_id: str, index: int):
-    return FileResponse(chunk_file(session_id, index, "wav"), media_type="audio/wav")
+async def chunk_audio(session_id: str, index: int, download: bool = False):
+    path = chunk_file(session_id, index, "wav")
+    if download:
+        return FileResponse(path, media_type="audio/wav",
+                            filename=f"narration_{session_id[:8]}_{index + 1:03}.wav")
+    return FileResponse(path, media_type="audio/wav")
 
 
 @app.get("/api/sessions/{session_id}/chunks/{index}/video")
-async def chunk_video(session_id: str, index: int):
-    return FileResponse(chunk_file(session_id, index, "mp4"), media_type="video/mp4")
+async def chunk_video(session_id: str, index: int, download: bool = False):
+    path = chunk_file(session_id, index, "mp4")
+    if download:
+        return FileResponse(path, media_type="video/mp4",
+                            filename=f"narration_{session_id[:8]}_{index + 1:03}.mp4")
+    return FileResponse(path, media_type="video/mp4")
+
+
+@app.get("/api/fetch-image")
+async def fetch_image(url: str):
+    """D&D画像URLの取り込み(他タブのローカルURL・file:// のみ。CORS回避プロキシ)。"""
+    import mimetypes
+    from urllib.parse import unquote, urlparse
+
+    import httpx
+    from fastapi.responses import Response
+
+    parsed = urlparse(url)
+    if parsed.scheme == "file":
+        path = Path(unquote(parsed.path))
+        if not path.is_file():
+            raise HTTPException(404, f"ファイルが見つかりません: {path}")
+        media = mimetypes.guess_type(str(path))[0] or ""
+        if not media.startswith("image/"):
+            raise HTTPException(415, "画像ではありません")
+        return Response(content=path.read_bytes(), media_type=media)
+    if parsed.scheme not in ("http", "https") or parsed.hostname not in (
+        "localhost", "127.0.0.1", "::1",
+    ):
+        raise HTTPException(400, "ローカルのURLのみ取得できます")
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.get(url)
+            resp.raise_for_status()
+    except Exception as exc:
+        raise HTTPException(502, f"画像の取得に失敗しました: {exc}")
+    ctype = resp.headers.get("content-type", "")
+    if not ctype.startswith("image/"):
+        raise HTTPException(415, "画像ではありません")
+    return Response(content=resp.content, media_type=ctype)

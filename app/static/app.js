@@ -402,7 +402,10 @@ function setDroppedFile(input, file) {
   input.dispatchEvent(new Event("change", {bubbles: true}));
 }
 
-function installDropZone(zone, onFile) {
+// 枠外ドロップでブラウザがファイルを開いてページ遷移するのを防ぐ
+["dragover", "drop"].forEach(type => window.addEventListener(type, event => event.preventDefault()));
+
+function installDropZone(zone, onFile, {allowUrl = false} = {}) {
   ["dragenter", "dragover"].forEach(type => zone.addEventListener(type, event => {
     event.preventDefault();
     zone.classList.add("drag-over");
@@ -411,15 +414,38 @@ function installDropZone(zone, onFile) {
     event.preventDefault();
     zone.classList.remove("drag-over");
   }));
-  zone.addEventListener("drop", event => {
+  zone.addEventListener("drop", async event => {
     const file = event.dataTransfer.files[0];
-    if (file) onFile(file);
+    if (file) return onFile(file);
+    // 他タブの画像やファイルマネージャは File が無く URL だけ来ることがある
+    const url = (event.dataTransfer.getData("text/uri-list") ||
+                 event.dataTransfer.getData("text/plain") || "").split("\n")[0].trim();
+    if (!url || !allowUrl) return;
+    try {
+      let resp = null;
+      if (!url.startsWith("file:")) {
+        try {
+          resp = await fetch(url, {mode: "cors"});
+          if (!resp.ok) throw new Error(resp.status);
+        } catch { resp = null; }
+      }
+      if (!resp) {
+        resp = await fetch(`/api/fetch-image?url=${encodeURIComponent(url)}`);
+        if (!resp.ok) throw new Error((await resp.json().catch(() => null))?.detail || resp.status);
+      }
+      const blob = await resp.blob();
+      const name = decodeURIComponent(url.split("/").pop().split("?")[0]) || "dropped.png";
+      onFile(new File([blob], name, {type: blob.type}));
+    } catch (error) {
+      statusLabel.textContent = t("error", String(error.message || error));
+    }
   });
 }
 
 let previewUrl = null;
 function useCharacterFile(file) {
-  if (!file.type.startsWith("image/") || !/[.](png|jpe?g|webp)$/i.test(file.name)) {
+  const typeOk = file.type.startsWith("image/") || !file.type;
+  if (!typeOk || !/[.](png|jpe?g|webp)$/i.test(file.name)) {
     statusLabel.textContent = t("imageTypeError");
     return;
   }
@@ -439,7 +465,7 @@ characterInput.addEventListener("change", () => {
   stageCharacter.classList.add("visible");
   characterDrop.classList.add("has-file");
 });
-installDropZone(characterDrop, useCharacterFile);
+installDropZone(characterDrop, useCharacterFile, {allowUrl: true});
 
 async function decodeTextFile(file) {
   if (!/[.]txt$/i.test(file.name) && file.type !== "text/plain") {
@@ -513,6 +539,7 @@ form.querySelectorAll(".live-setting input, .live-setting select, .live-setting 
 
 function adoptSession(data) {
   sessionId = data.id;
+  try { localStorage.setItem("narrationSessionId", sessionId); } catch {}
   liveSettingsRevision = 0;
   liveSettingsPromise = Promise.resolve();
   inputPanel.classList.remove("live-settings-saving", "live-settings-error");
@@ -887,7 +914,36 @@ function renderChunks(chunks) {
   chunkList.replaceChildren(...chunks.map(chunk => {
     const item = document.createElement("li");
     item.className = chunk.status;
-    item.textContent = `${chunk.index + 1}. ${chunk.text} — ${t(chunk.status)}`;
+    item.textContent = `${chunk.index + 1}. ${chunk.text} — ${t(chunk.status)} `;
+    if (["playable", "completed", "played"].includes(chunk.status) && sessionId) {
+      for (const [suffix, label] of [["video", "MP4"], ["audio", "WAV"]]) {
+        const a = document.createElement("a");
+        a.href = `/api/sessions/${sessionId}/chunks/${chunk.index}/${suffix}?download=1`;
+        a.setAttribute("download", "");
+        a.className = "chunk-dl";
+        a.textContent = label;
+        item.appendChild(a);
+      }
+    }
     return item;
   }));
 }
+
+
+// --- 前回セッションの復元(リロード後も生成済みチャンクへ辿れるように) ---
+(async () => {
+  if (sessionId) return;
+  let saved = null;
+  try { saved = localStorage.getItem("narrationSessionId"); } catch {}
+  if (!saved) return;
+  try {
+    const response = await fetch(`/api/sessions/${saved}`);
+    if (!response.ok) throw new Error(String(response.status));
+    const data = await response.json();
+    adoptSession(data);
+    renderChunks(data.chunks || []);
+    statusLabel.textContent = t("configured");
+  } catch {
+    try { localStorage.removeItem("narrationSessionId"); } catch {}
+  }
+})();
