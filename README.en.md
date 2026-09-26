@@ -10,9 +10,9 @@ See [Development History and Measurements](docs/development-notes.en.md) for the
 
 ## Demo
 
-[![Realtime Narration Video demo](docs/assets/demo-preview.jpg)](docs/assets/demo.mp4)
+[![Realtime Narration Video demo (GIF, real speed)](docs/assets/demo.gif)](docs/assets/demo.mp4)
 
-Click the image to open a 57-second demonstration of streaming LLM output being converted to speech and video. You can also open the [MP4 directly (1.8 MB)](docs/assets/demo.mp4).
+The GIF above is a 12-second excerpt at real speed. Click it to open the full 57-second demonstration of streaming LLM output being converted to speech and video. You can also open the [MP4 directly (1.8 MB)](docs/assets/demo.mp4).
 
 The video was compressed for GitHub and therefore looks slightly worse than the original generated and displayed output.
 

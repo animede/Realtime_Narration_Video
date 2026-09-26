@@ -10,9 +10,9 @@
 
 ## 動作サンプル
 
-[![Realtime Narration Videoの動作サンプル](docs/assets/demo-preview.jpg)](docs/assets/demo.mp4)
+[![Realtime Narration Videoの動作サンプル(GIF、実速度)](docs/assets/demo.gif)](docs/assets/demo.mp4)
 
-画像をクリックすると、LLMの応答をTTSと動画へ順次変換して再生する約57秒のデモ動画を開きます。直接開く場合は[MP4版（1.8MB）](docs/assets/demo.mp4)をご覧ください。
+上のGIFは実速度の抜粋(12秒)です。クリックすると、LLMの応答をTTSと動画へ順次変換して再生する約57秒のフルデモ動画を開きます。直接開く場合は[MP4版（1.8MB）](docs/assets/demo.mp4)をご覧ください。
 
 この動画はGitHub掲載用に圧縮しているため、実際の生成・表示画質よりも若干劣化しています。
 
