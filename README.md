@@ -22,7 +22,7 @@ https://github.com/user-attachments/assets/a5eb5e5c-3b14-4a47-97b9-b8ca1d9cbb53
 
 
 
-実写系キャラクターとのリアルタイム会話を編集なしの実時間で収録したものです(RTX PRO 6000 Blackwellで収録)。冒頭のテキスト入力のエンターが開始点で、以降は完全に連続再生されます。ファイルとして開く場合は[MP4版（3.0MB）](docs/assets/demo-conversation.mp4)をどうぞ。
+実写系キャラクターとのリアルタイム会話を編集なしの実時間で収録したものです(RTX PRO 6000 Blackwellで収録)。冒頭のテキスト入力のエンターが開始点で、以降は完全に連続再生されます。ファイルとして開く場合は[MP4版（6.0MB）](docs/assets/demo-conversation.mp4)をどうぞ。
 
 この動画はGitHub掲載用に圧縮しているため、実際の生成・表示画質よりも若干劣化しています。
 

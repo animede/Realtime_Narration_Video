@@ -22,7 +22,7 @@ https://github.com/user-attachments/assets/30dacd20-8c21-4b49-81bc-4370eae94d83
 
 
 
-An unedited, real-speed recording of a real-time conversation with a photorealistic character (recorded on an RTX PRO 6000 Blackwell). It starts the moment Enter is pressed on the text input, and playback is fully continuous from there. The character speaks Japanese — the pipeline is language-agnostic and works with any local TTS. The [MP4 file (3.0 MB)](docs/assets/demo-conversation.mp4) is also available directly.
+An unedited, real-speed recording of a real-time conversation with a photorealistic character (recorded on an RTX PRO 6000 Blackwell). It starts the moment Enter is pressed on the text input, and playback is fully continuous from there. The character speaks Japanese — the pipeline is language-agnostic and works with any local TTS. The [MP4 file (6.0 MB)](docs/assets/demo-conversation.mp4) is also available directly.
 
 The video was compressed for GitHub and therefore looks slightly worse than the original generated and displayed output.
 
