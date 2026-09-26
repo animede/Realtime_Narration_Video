@@ -18,7 +18,7 @@ The GIF above is a 12-second excerpt at real speed. Click it to open the full 57
 
 [![Real-time conversation demo](docs/assets/demo-conversation-preview.jpg)](docs/assets/demo-conversation.mp4)
 
-An unedited, real-speed recording of a real-time conversation with a photorealistic character (recorded on an RTX PRO 6000 Blackwell). It starts the moment Enter is pressed on the text input, and playback is fully continuous from there. The character speaks Japanese — the pipeline is language-agnostic and works with any local TTS. Click to open the [MP4 (5.5 MB)](docs/assets/demo-conversation.mp4).
+An unedited, real-speed recording of a real-time conversation with a photorealistic character (recorded on an RTX PRO 6000 Blackwell). It starts the moment Enter is pressed on the text input, and playback is fully continuous from there. The character speaks Japanese — the pipeline is language-agnostic and works with any local TTS. Click to open the [MP4 (3.0 MB)](docs/assets/demo-conversation.mp4).
 
 The video was compressed for GitHub and therefore looks slightly worse than the original generated and displayed output.
 
