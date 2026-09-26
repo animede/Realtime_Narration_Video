@@ -14,6 +14,12 @@
 
 上のGIFは実速度の抜粋(12秒)です。クリックすると、LLMの応答をTTSと動画へ順次変換して再生する約57秒のフルデモ動画を開きます。直接開く場合は[MP4版（1.8MB）](docs/assets/demo.mp4)をご覧ください。
 
+### リアルタイム会話デモ(実時間・72秒)
+
+[![リアルタイム会話デモ](docs/assets/demo-conversation-preview.jpg)](docs/assets/demo-conversation.mp4)
+
+実写系キャラクターとのリアルタイム会話を編集なしの実時間で収録したものです(RTX PRO 6000 Blackwellで収録)。冒頭のテキスト入力のエンターが開始点で、以降は完全に連続再生されます。クリックで[MP4版（5.5MB）](docs/assets/demo-conversation.mp4)を開きます。
+
 この動画はGitHub掲載用に圧縮しているため、実際の生成・表示画質よりも若干劣化しています。
 
 ## 現在のMVP

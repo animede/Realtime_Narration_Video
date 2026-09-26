@@ -14,6 +14,12 @@ See [Development History and Measurements](docs/development-notes.en.md) for the
 
 The GIF above is a 12-second excerpt at real speed. Click it to open the full 57-second demonstration of streaming LLM output being converted to speech and video. You can also open the [MP4 directly (1.8 MB)](docs/assets/demo.mp4).
 
+### Real-time conversation demo (real speed, 72 s)
+
+[![Real-time conversation demo](docs/assets/demo-conversation-preview.jpg)](docs/assets/demo-conversation.mp4)
+
+An unedited, real-speed recording of a real-time conversation with a photorealistic character (recorded on an RTX PRO 6000 Blackwell). It starts the moment Enter is pressed on the text input, and playback is fully continuous from there. The character speaks Japanese — the pipeline is language-agnostic and works with any local TTS. Click to open the [MP4 (5.5 MB)](docs/assets/demo-conversation.mp4).
+
 The video was compressed for GitHub and therefore looks slightly worse than the original generated and displayed output.
 
 ## Current MVP
