@@ -16,7 +16,11 @@
 
 ### リアルタイム会話デモ(実時間・72秒)
 
-[![リアルタイム会話デモ](docs/assets/demo-conversation-preview.jpg)](docs/assets/demo-conversation.mp4)
+
+
+https://github.com/user-attachments/assets/a5eb5e5c-3b14-4a47-97b9-b8ca1d9cbb53
+
+
 
 実写系キャラクターとのリアルタイム会話を編集なしの実時間で収録したものです(RTX PRO 6000 Blackwellで収録)。冒頭のテキスト入力のエンターが開始点で、以降は完全に連続再生されます。クリックで[MP4版（3.0MB）](docs/assets/demo-conversation.mp4)を開きます。
 
