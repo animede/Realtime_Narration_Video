@@ -67,11 +67,11 @@ On a single GPU, generation can occasionally be slower than playback. When the b
 
 | GPU configuration | Assessment |
 |---|---|
-| 48 GB class (RTX PRO 5000 / 6000 Blackwell) | Real-time operation (all-resident configuration, ~33 GB resident, measured) |
-| RTX 5090 32 GB alone | Runs (model-offload configuration, measured generation peak ~23 GB / ~0.5 GB idle), but generation takes ~3x real time, so real-time playback is not sustained |
+| 48 GB class (RTX PRO 5000 / 6000 Blackwell) | Real-time operation (all-resident `nvfp4-fast` configuration, ~33 GB resident, measured) |
+| RTX 5090 32 GB alone | Real-time operation (32 GB-oriented all-resident `nvfp4-32gb` configuration: ~28.8 GB resident, 4-step chunks in 3.8 s = 0.79x real time, measured). Upsamplers are not loaded, so upscale/t2i are unavailable |
 | RTX 4090 24 GB | Unsupported by the FP4 kernel; NF4 can run but is slower |
 
-These figures are based on measurements of the FP4 (nvfp4) configuration. The 32 GB row comes from a VRAM-capped test: with free VRAM limited to 31 GB, the all-resident configuration OOMs during weight loading (it needs ~33 GB), while the model-offload configuration completes 512×384 / 20 fps / 97-frame / 4-step chunks at a peak of ~23 GB in ~15 s per chunk. Actual memory consumption and speed vary with the video profile, model placement, concurrent processes, and driver environment. Making 32 GB cards real-time would require an intermediate configuration (not yet implemented) that keeps the transformer resident and offloads only the Text Encoder.
+These figures are based on measurements of the FP4 (nvfp4) configuration. The 32 GB row comes from a VRAM-capped test with free VRAM limited to 31 GB (headless RTX 5090 equivalent): the `nvfp4-32gb` preset (skips the unused latent/temporal upsamplers, −1.2 GB, and moves the Text Encoder's embedding table to CPU while removing the unnecessary logits computation, −2.4 GB) fits the all-resident + CUDA Graph real-time configuration into the 32 GB class — steady-state 3.8 s per 512×384 / 20 fps / 97-frame / 4-step chunk, with output quality equivalent to the 48 GB configuration. Actual memory consumption and speed vary with the video profile, model placement, concurrent processes, and driver environment.
 
 ## Running
 
