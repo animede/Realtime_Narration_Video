@@ -6,6 +6,8 @@
 
 動画下のチャット入力をGemma 4へ送り、ストリーミング応答をAivisSpeechで音声化します。約5秒の音声チャンクをLTX-2.5へ渡し、完成した動画から順次再生する技術検証アプリです。LTXが生成した音声は使用せず、最終MP4には元のTTS音声を差し戻します。
 
+コンパニオンアプリとして、本アプリをヘッドレスのキャラクターレンダリングサービスとして使う**音声会話クライアント** [Realtime_Conversation_Video](https://github.com/animede/Realtime_Conversation_Video)(マイクVAD→LLM `input_audio` 直渡し、ROLE注入、履歴要約)があります。
+
 開発中に行った速度・解像度・steps・実写リップシンクの比較は、[改良の経緯と測定記録](docs/development-notes.md)にまとめています。構成、API、パラメータ、運用方法は[テクニカルガイド](docs/technical-guide.md)を参照してください。
 
 ## 動作サンプル
