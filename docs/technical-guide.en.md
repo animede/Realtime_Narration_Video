@@ -198,6 +198,18 @@ Conversation steps are configurable from 1 to 12 (default 4). The first clip use
 
 LTX spatial dimensions must be at least 256 and divisible by 32. Frame counts must satisfy `8n+1`. Duration is `(frames-1)/fps`.
 
+### 7.1 Low-resolution first chunk (the lever that sets conversational responsiveness)
+
+What determines perceived latency is the time from submitting a message to the first video and audio coming out. Every chunk after the first can be generated behind the playback of the previous one, so its generation time is hidden — but **the first chunk has nothing to hide behind**. Its generation time is exactly what the user waits.
+
+So the first chunk of each turn uses a lower resolution in the same aspect family, rounded to multiples of 32 (the "First-clip resolution" column above), together with `min(4, video_steps)`. Generation cost scales roughly with the spatial pixel count, so halving the pixels cuts the first chunk's generation time substantially.
+
+Crucially, **fps and frame count stay exactly as the selected profile defines them**. Keeping the time axis uniform across all chunks means audio sync, chunk concatenation, and player switching never need to know that resolutions differ. Only spatial resolution and steps change.
+
+The paired decision is that **speaking anchors are never low-resolution** (section 4.1). Anchors are re-referenced by every subsequent chunk, so any softness in the anchor propagates into all of them; in practice a low-resolution anchor visibly degraded face, mouth, and hair detail. Anchors therefore always use the selected resolution at eight steps. The disposable first chunk is allowed to be coarse; the anchor everyone references must be high quality.
+
+In real use at 384×512, this configuration delivered the first completed chunk about 2.6 seconds after the message, with roughly 1.5 seconds of playback margin on subsequent chunks (history and measurements in the [development notes](development-notes.en.md)). Detail dips only for the first moment of a turn and returns to the selected resolution from the second chunk on.
+
 ## 8. Character modes
 
 | Setting | Reference | Seed | Conversation scale | Intended use |
