@@ -38,14 +38,16 @@ The video was compressed for GitHub and therefore looks slightly worse than the 
 - Sentence/clause segmentation and sentence-level TTS
 - Streaming chat with conversation history through an OpenAI-compatible Gemma 4 endpoint
 - TTS starts for finalized clauses while the LLM response is still streaming
-- Dynamic video chunks that favor punctuation and begin TTS around 22–26 Japanese characters while protecting word endings
+- Dynamic video chunks that start TTS at sentence endings, line breaks, colons, and natural Japanese clause boundaries without forcing splits where punctuation is absent
 - Pipelined TTS audio preparation and LTX video generation
 - Drag-and-drop character images and TXT files
+- Live video-direction text incorporated into generation prompts
+- A leading `[video direction]` in a chat message is not spoken and applies only to that turn
 - Direct narration without the LLM, accepting pasted, typed, or dropped TXT content
 - Japanese/English UI switching plus an independent Auto/Japanese/English conversation-language setting
 - Chunk assembly based on actual WAV duration
 - LTX-2.5 Audio-to-Video generation
-- The same 16/20/24 fps landscape, 4:3, and portrait profiles as Realtime Video Studio
+- 24 landscape, 4:3, and portrait profiles across 16/20/24 fps
 - A generated speaking anchor is reused for every photorealistic chunk to avoid a closed-mouth reference
 - During character registration, LTX is preloaded and a high-quality open-mouth anchor is generated at the selected resolution with eight steps
 - Original TTS audio replaces the LTX-generated audio
@@ -53,7 +55,7 @@ The video was compressed for GitHub and therefore looks slightly worse than the 
 - Dynamic startup buffering and measured transition-gap display
 - Short utterances are generated as five-second clips and advance after speech when the next clip is ready. Speech longer than five seconds keeps the final video frame visible while the original TTS audio finishes
 - The first clip of every turn uses a lower resolution with the same framing; later clips use the selected resolution. Steps are configurable in the UI (default 4; the first clip uses `min(4, steps)`)
-- Idle playback is a playlist: setup generates 3–5 clips (selectable) that all start and end at the input pose and play in sequence. One fresh clip is generated per playback cycle, an incoming chat message interrupts idle generation immediately so conversation wins the GPU, and refreshing pauses while the tab is hidden or after five minutes of inactivity
+- Idle playback is a playlist: setup always generates three clips, then grows one at a time to the configured 3–7 (default 5); pools of six or seven use randomized playback. Conversation blocks replenishment across all sessions, incoming chat interrupts every in-flight idle job across sessions, and replenishment pauses while hidden or after five minutes of inactivity
 - Optional turn continuity: start the turn from the frozen idle frame captured at send time, and/or FLF-anchor the final chunk back to the idle start pose — with both enabled the idle→talk→idle cycle is pose-continuous (defaults keep the classic lip-motion-first behaviour)
 - A well-tuned character can be saved as a preset (settings + idle pool + speaking anchors) and restored instantly from a thumbnail gallery with zero regeneration
 - Seed 1004, the most reliable observed photorealistic articulation seed, is the default and can be changed in the UI for every photorealistic chunk
@@ -96,6 +98,7 @@ The Gateway manages backends exclusively. Unmanaged H3/LTX processes on ports 86
 ## API
 
 - `POST /api/sessions` — submit the character, text, concept, and settings as multipart data
+- `PATCH /api/sessions/{id}/settings` — update live settings such as video direction
 - `POST /api/sessions/{id}/messages` — submit a user message and start streaming generation
 - `POST /api/sessions/{id}/narrations` — split and narrate supplied text directly without the LLM
 - `POST /api/presets` / `GET /api/presets` / `POST /api/presets/{id}/restore` / `DELETE /api/presets/{id}` — save, list, instantly restore (zero regeneration), and delete character presets
@@ -106,7 +109,7 @@ The Gateway manages backends exclusively. Unmanaged H3/LTX processes on ports 86
 - `DELETE /api/sessions/{id}` — cancel after the current chunk finishes
 - `GET /api/sessions/{id}/chunks/{index}/video` — retrieve the MP4 with replaced audio
 - `GET /api/sessions/{id}/chunks/{index}/audio` — retrieve the original TTS WAV
-- `GET /healthz` — application, Gateway, and TTS health
+- `GET /healthz` — application, Gateway, TTS, and LLM health
 
 ## Tests
 

@@ -2,9 +2,9 @@
 
 English | [日本語](development-notes.md)
 
-Last updated: September 4, 2026
+Last updated: September 28, 2026
 
-This document records the experiments and decisions made while improving response latency, continuous playback, and mouth motion for photorealistic characters. All numbers are observations from the development environment and vary with GPU load, backend state, input image, utterance, and TTS load.
+This document records the experiments and decisions made while improving response latency, continuous playback, and mouth motion for photorealistic characters. Measurements through section 11 describe the September 4, 2026 state; sections 10 and 14 reflect the current specification. All numbers are observations from the development environment and vary with GPU load, backend state, input image, utterance, and TTS load.
 
 ## 1. Pipeline under test
 
@@ -198,7 +198,7 @@ Photorealistic reference mouth shape strongly constrains output. Registration th
 
 The early reduced-resolution four-step version took 19.9 seconds after backend restart, including 17.0 seconds for generation, and approximately 3.2–3.6 seconds while warm. It was replaced with selected-resolution eight-step generation to protect the anchor reused by every later clip. At 384×512, generation measured 4.94 seconds. Four steps failed to open the mouth in one trial; eight steps produced a clear open mouth. Accurate FFmpeg seeking places `-ss` after the input to avoid returning to the first keyframe.
 
-In practical 384×512 testing, the full-resolution anchor improved facial, mouth, and hair detail and maintained articulation. First completion after conversation start was 2.618 seconds and follow-up headroom was 1.496 seconds, with no conversational latency penalty from higher-quality offline preparation. Selected-resolution, eight-step anchors were consequently adopted for all 11 profiles.
+In practical 384×512 testing, the full-resolution anchor improved facial, mouth, and hair detail and maintained articulation. First completion after conversation start was 2.618 seconds and follow-up headroom was 1.496 seconds, with no conversational latency penalty from higher-quality offline preparation. Selected-resolution, eight-step anchors were consequently adopted for all 11 profiles available at the time; the same policy now covers 24 profiles.
 
 One post-preparation E2E test using 288×384, four steps, and `modality_scale=1.3` reported 2.805-second server generation, substantially faster than approximately 4.2–4.8 seconds with the former ineffective audio scale.
 
@@ -250,32 +250,22 @@ A removed three-/five-second comparison calculated `seconds × fps + 1`, produci
 - Start TTS while the LLM response is streaming
 - Run TTS tasks concurrently and pipeline later TTS with video generation
 - Generate approximately five-second clips
-- Four steps for the first clip; eight for later clips
+- UI-selected video steps (1–12, default 4); `min(4, steps)` for the first clip and the selected value thereafter
 - Reduced first-clip resolution for every profile; selected resolution thereafter
 - 100 ms Gateway polling
 - User-selected character policy
-- Photorealistic/Fast default: 288×384 first, 384×512 follow-ups for that selected profile, UI-selected seed (default 1004), no conversation scale, speaking anchor every time
-- Photorealistic/Strong: same plus conversation `modality_scale=1.3`
-- Standard: selected profile, variable seed, scale 1.0/default, final-frame chaining within a turn
+- Photorealistic/Fast default: startup profile first, selected profile thereafter, UI-selected seed (default 1004), no conversation scale, and a speaking anchor every time
+- Photorealistic/Mouth emphasis: same plus conversation `modality_scale=1.3`
+- Standard: selected base seed plus chunk index, no modality scale, and final-frame chaining within a turn
 - Replace generated audio with original TTS audio
+- Grow the idle pool from three initial clips to the configured 3–7 (default 5); randomize playback at six or more
+- Independently toggle the captured start frame and FLF-anchored return pose
+- Hold a realtime-priority lease during turns to exclude long jobs from other backends
+- Instantly restore settings, idle clips, and speaking anchors from character presets
 
 ### 10.1 Startup resolutions for all profiles
 
-Anchors use each selected profile's native resolution and eight steps because they are reused. Only the first clip uses the nearest lower resolution divisible by 32 and four steps; fps and frame count remain unchanged.
-
-| Selected/anchor profile | First clip |
-|---|---:|
-| 640×352 at 16 fps | 480×256 |
-| 512×384 at 16 fps | 384×288 |
-| 640×384 at 16 fps | 480×288 |
-| 576×384 at 16 fps | 480×320 |
-| 384×512 at 16 fps | 288×384 |
-| 384×640 at 16 fps | 288×480 |
-| 576×320 at 20 fps | 480×256 |
-| 512×384 at 20 fps | 384×288 |
-| 512×288 at 24 fps | 448×256 |
-| 480×320 at 24 fps | 384×256 |
-| 288×512 at 24 fps | 256×448 |
+Anchors use each selected profile's native resolution and eight steps because they are reused. Across all 24 public profiles, only the first clip uses the nearest lower resolution divisible by 32 and `min(4, video_steps)`; fps and frame count remain unchanged. See the [technical guide](technical-guide.en.md#7-steps-and-resolution) for the current 24-profile mapping.
 
 Aspect ratios that cannot be scaled exactly in multiples of 32 use the nearest ratio that limits the visible transition. Appearance and speed still require practical validation per profile.
 
@@ -314,9 +304,9 @@ Preparation was verified for 16 fps landscape, 20 fps landscape, 24 fps landscap
 - LTX alone cannot guarantee exact lip sync for photorealistic input.
 - `modality_scale=1.3` costs approximately 0.7 seconds at four steps in exchange for stronger mouth motion.
 - GPU queue variance can still exhaust the buffer in long conversations.
-- Japanese character-count segmentation is less robust than morphological analysis.
+- Heuristic Japanese punctuation/hiragana clause segmentation is less robust than morphological analysis.
 - Guaranteed photorealistic lip sync requires a dedicated post-generation lip-sync stage.
-- CUDA Graphs and `torch.compile` are candidates for the next performance iteration.
+- CUDA Graphs remain a candidate for 48 GB-class configurations but are disabled in the 32 GB profile because per-shape captures accumulate memory; `torch.compile` remains a candidate.
 - Semantic emotion, expression, and gesture generation from LLM text is future work.
 
 ## 13. Interpreting measurements
@@ -334,3 +324,17 @@ Evaluate separately:
 - buffered headroom at the end of the first clip
 
 Do not directly compare values that mix server revisions, steps, resolutions, or scales. Repeat tests under identical conditions. When an effect is smaller than runtime variance, fix the input and alternate variants; averages from different time periods are useful only as directional observations.
+
+## 14. September 14–28 addendum
+
+After the September 4 latency work, development shifted toward long-running use and integration with external GUIs:
+
+- Expanded the public video set to 24 landscape and portrait profiles across 16/20/24 fps, each with a reduced startup profile.
+- Made generation steps configurable from 1 to 12 and standardized the first clip on `min(4, steps)`.
+- Changed idle playback to progressive growth from three initial clips to a maximum of seven (default five), randomized pools of six or seven, and paused replenishment while hidden or inactive.
+- Added a captured idle-frame start anchor and an FLF return-to-idle end anchor.
+- Added character presets, session restoration, per-chunk downloads, and CORS for external GUIs.
+- Added `strategy=coresident` backend loading and a realtime-priority lease that excludes long H3 jobs during a conversation turn.
+- Added automatic cancellation of abandoned turns five seconds after the last SSE viewer disconnects.
+
+For 32 GB-class GPUs, the `nvfp4-32gb` preset omits unused upsamplers and moves part of the Text Encoder to CPU, reducing measured resident use to approximately 28.8 GB. With free VRAM capped at 31 GB, a 512×384, 20 fps, 97-frame, four-step chunk took 3.5–4 seconds in steady state (3.8 seconds measured). The video engine must have the GPU to itself because headroom is only about 2 GB; run TTS and the LLM on CPU or another host. CUDA Graph is disabled in this profile to avoid per-shape memory accumulation.
