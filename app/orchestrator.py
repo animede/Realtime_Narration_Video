@@ -508,8 +508,6 @@ class Orchestrator:
                 ))
             await load_task
             folder = self.settings.data_dir / session.id
-            preparation_profile = session.video_profile
-            _, _, _, preparation_frames = VIDEO_PROFILES[preparation_profile]
             # The closed-mouth reference for natural speech and all
             # articulation anchors comes from the camera-locked clip start.
             # 初期プールは常に3本だけ生成する(登録を速くするため。ユーザー発案)。
@@ -530,6 +528,10 @@ class Orchestrator:
                 )
 
             if speech_task is not None:
+                # LTX 専用(h3 は speech_task を作らない)。VIDEO_PROFILES は LTX の表
+                # なので、この参照を h3 経路に置くと KeyError になる(2026-10-06 実機)。
+                preparation_profile = session.video_profile
+                _, _, _, preparation_frames = VIDEO_PROFILES[preparation_profile]
                 wav, _ = await speech_task
                 condition = folder / "character-preparation.wav"
                 condition.write_bytes(pad_wav(wav, 5.1))

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import math
+from time import monotonic
 from pathlib import Path
 from urllib.parse import urljoin
 
@@ -470,10 +471,21 @@ class H3GatewayClient(GatewayClient):
     # -- backend lifecycle -----------------------------------------------------
 
     async def load_backend(self) -> dict:
-        """Start the H3 process (weights load lazily on the first generation)."""
-        async with httpx.AsyncClient(timeout=660) as client:
-            response = await client.post(f"{self.base_url}/api/v1/backend/load",
-                                         json=self.load_body())
+        """Start the H3 process (weights load lazily on the first generation).
+
+        エンジン切替の瞬間に LTX がまだ生成中(直前セッションの待機補充など)だと
+        gateway が 409「バックエンド ltx25 が生成中(busy)」を返す(2026-10-06 実機)。
+        LTX の 1 クリップは数十秒で終わるので、409 の間は 2 秒間隔で再試行する。
+        """
+        deadline = monotonic() + 180.0
+        while True:
+            async with httpx.AsyncClient(timeout=660) as client:
+                response = await client.post(f"{self.base_url}/api/v1/backend/load",
+                                             json=self.load_body())
+            if response.status_code == 409 and monotonic() < deadline:
+                await asyncio.sleep(2.0)
+                continue
+            break
         if response.is_error:
             raise GatewayError(
                 f"H3エンジン準備失敗 HTTP {response.status_code}: {response.text[:500]}")
