@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import shutil
 import subprocess
 from pathlib import Path
@@ -8,11 +9,17 @@ from time import time
 
 from .chunker import SpeechPart
 from .config import Settings
-from .gateway import VIDEO_PROFILES, GatewayClient, generation_profile, profile_duration
+from .gateway import (
+    VIDEO_PROFILES, GatewayClient, H3GatewayClient, H3_IDLE_PROMPT, H3_IDLE_SECONDS,
+    H3_STEPS, cover_crop, crop_to_aspect, generation_profile, h3_clip_seconds,
+    h3_profile_size, make_gateway, profile_duration,
+)
 from .llm import StreamingChatClient, pop_speakable
 from .models import ChatMessage, Chunk, NarrationSession, SessionStatus
 from .muxer import mux_original_audio
 from .tts import join_wavs, pad_wav, silent_wav, synthesize_sentence
+
+logger = logging.getLogger(__name__)
 
 
 SYSTEM_PROMPT_JA = (
@@ -69,7 +76,20 @@ class Orchestrator:
         self.tasks: dict[str, asyncio.Task] = {}
         # 進行中のアイドル生成のクライアント(チャット到着時に即中断するため)。
         self.idle_clients: dict[str, GatewayClient] = {}
+        # H3 のプリワーム(ref2va ダミー1本)のバックグラウンドタスク。
+        self.h3_warmups: dict[str, asyncio.Task] = {}
         settings.data_dir.mkdir(parents=True, exist_ok=True)
+
+    def _gateway(self, session: NarrationSession) -> GatewayClient:
+        """Gateway client for the session's engine (ltx25 = the original client)."""
+        if session.video_engine == "h3":
+            return make_gateway("h3", self.settings)
+        return GatewayClient(self.settings.gateway_url, self.settings.gateway_preset,
+                             self.settings.poll_interval)
+
+    @staticmethod
+    def _is_h3(session: NarrationSession) -> bool:
+        return session.video_engine == "h3"
 
     async def interrupt_idle(self, session_id: str) -> None:
         """Stop ALL in-flight idle generations so a conversation can start now.
@@ -135,6 +155,9 @@ class Orchestrator:
           始まり入力ポーズで終わるためハードカットもクロスフェードも不要
           (顔ブレンドは顔崩壊するため厳禁)。
         """
+        if self._is_h3(session):
+            return await self._build_idle_loop_h3(session, gateway, folder, character,
+                                                  target, base_seed)
         lively = session.idle_liveliness != "calm"
         preparation_profile = session.video_profile
         _, _, idle_fps, preparation_frames = VIDEO_PROFILES[preparation_profile]
@@ -322,6 +345,119 @@ class Orchestrator:
             raise RuntimeError("キャラクター画像が見つかりません")
         return candidates[0]
 
+    # -- MiniMax-H3 engine (docs/h3-engine-plan.md) ------------------------------
+
+    def _write_h3_anchor(self, session: NarrationSession, character: Path, target: Path) -> Path:
+        """Speaking anchor: the character image cropped to the canvas aspect (native res)."""
+        width, height = h3_profile_size(session.video_profile)
+        return crop_to_aspect(character, target, width, height)
+
+    def _h3_anchor(self, session: NarrationSession, character: Path, folder: Path) -> Path:
+        """The one reference image reused by every chunk (cache-hit condition)."""
+        anchor = folder / "character-neutral.png"
+        if not anchor.is_file():
+            self._write_h3_anchor(session, character, anchor)
+        return anchor
+
+    async def _build_idle_loop_h3(self, session: NarrationSession, gateway: GatewayClient,
+                                  folder: Path, character: Path, target: Path,
+                                  base_seed: int) -> Path:
+        """H3 idle clip: fl2va with first = last = the canvas-fitted anchor, muted.
+
+        Both frames must be cover-cropped to the exact canvas first: fl2va stretches
+        `image` but cover-crops `last_image`, so any size mismatch stops the loop
+        from closing (probe 2026-10-06: ends return to the anchor at 33 dB).
+        """
+        assert isinstance(gateway, H3GatewayClient)
+        width, height = h3_profile_size(session.video_profile)
+        fitted = cover_crop(character, folder / "character-h3-canvas.png", width, height)
+        image_id = await gateway.upload(fitted)
+        result = await gateway.generate_blocking(
+            gateway.idle_body(image_id=image_id, width=width, height=height, seed=base_seed))
+        idle_raw = folder / "character-idle-raw.mp4"
+        await gateway.download(result["result"]["video_url"], idle_raw)
+        idle_locked = folder / "character-idle-locked.mp4"
+        if session.camera_lock_enabled:
+            await asyncio.to_thread(self._lock_camera, idle_raw, idle_locked)
+        else:
+            shutil.copyfile(idle_raw, idle_locked)
+        # First and last frame are the anchor: shave one frame so the pose is not shown
+        # twice at the loop point (same rule as the LTX FLF-anchored loop).
+        clip_seconds = float(result["result"].get("duration_s") or H3_IDLE_SECONDS)
+        await self._make_seamless_loop(
+            idle_locked, target, duration_seconds=clip_seconds - 1.0 / 24.0, slowdown=1.0)
+        idle_raw.unlink(missing_ok=True)
+        idle_locked.unlink(missing_ok=True)
+        return target
+
+    def start_h3_warmup(self, session: NarrationSession) -> None:
+        """Warm the ref2va stack in the background (プラン §5b step 3). No-op for LTX."""
+        if not self._is_h3(session):
+            return
+        existing = self.h3_warmups.get(session.id)
+        if existing is not None and not existing.done():
+            return
+        self.h3_warmups[session.id] = asyncio.create_task(self._warm_h3(session))
+
+    async def _warm_h3(self, session: NarrationSession) -> None:
+        """One throw-away 73f ref2va clip so compile + prefix/latent caches are hot.
+
+        Best effort: a failure here only means the first real chunk pays the warm-up.
+        """
+        started = time()
+        try:
+            gateway = self._gateway(session)
+            assert isinstance(gateway, H3GatewayClient)
+            await gateway.load_backend()
+            folder = self.settings.data_dir / session.id
+            anchor = self._h3_anchor(session, self._character_image(session), folder)
+            width, height = h3_profile_size(session.video_profile)
+            seconds = h3_clip_seconds(0.0, gateway.min_seconds)
+            silence = folder / "character-h3-warmup.wav"
+            silence.write_bytes(silent_wav(seconds))
+            anchor_id, audio_id = await asyncio.gather(
+                gateway.upload(anchor), gateway.upload(silence))
+            await gateway.generate_blocking(gateway.chunk_body(
+                anchor_id=anchor_id, audio_id=audio_id,
+                prompt=self._prompt_h3("", session.concept, "low", "", ""),
+                width=width, height=height, seconds=seconds, seed=session.video_seed))
+            session.engine_prewarm_seconds = round(time() - started, 3)
+            self.save(session)
+        except Exception as exc:  # noqa: BLE001 - warm-up must never break a session
+            logger.warning("H3 prewarm failed for %s: %s", session.id, exc)
+
+    async def _ensure_h3_ready(self, session: NarrationSession, gateway: H3GatewayClient) -> None:
+        """Start the H3 process unless a warm-up is already doing so (a no-op when running)."""
+        warmup = self.h3_warmups.get(session.id)
+        if warmup is not None and not warmup.done():
+            return  # submit() retries 409 until the warm-up job and process are ready
+        await gateway.load_backend()
+
+    @staticmethod
+    def _prompt_h3(text: str, concept: str, action_level: str = "low",
+                   video_instruction: str = "", turn_video_instruction: str = "") -> str:
+        """ref2va prompt. The speech is frozen from the wav (vocal_lock), so the prompt only
+        directs framing, motion and who is speaking; the line is quoted as a hint."""
+        setting = concept.strip() or "a calm, clean studio background"
+        spoken_text = " ".join(text.split())[:300]
+        action_direction = ACTION_DIRECTIONS.get(action_level, ACTION_DIRECTIONS["low"])
+        standing = " ".join(video_instruction.split())[:1000]
+        turn = " ".join(turn_video_instruction.split())[:1000]
+        parts = [
+            "The person in the reference image speaks naturally to the camera, front-facing "
+            "or three-quarter view. The lips, teeth, and jaw move in sync with the supplied "
+            "speech audio and rest closed in silence. Preserve the exact identity and "
+            f"appearance of the reference. {action_direction} Stable camera. "
+            f"Scene direction: {setting}."
+        ]
+        if standing:
+            parts.append(f"Standing direction: {standing}.")
+        if turn:
+            parts.append(f"For this turn, follow precisely: {turn}.")
+        if spoken_text:
+            parts.append(f"She says: <d>{spoken_text}</d>")
+        return " ".join(parts)
+
     async def regenerate_idle(self, session: NarrationSession) -> None:
         """Reset the idle pool and start over with the current settings.
 
@@ -335,8 +471,7 @@ class Orchestrator:
             old_index = int(url.rsplit("/", 1)[1])
             (folder / f"character-idle-{old_index:03}.mp4").unlink(missing_ok=True)
         session.idle_videos = []
-        gateway = GatewayClient(self.settings.gateway_url, self.settings.gateway_preset,
-                                self.settings.poll_interval)
+        gateway = self._gateway(session)
         await gateway.load_backend()
         self.idle_clients[session.id] = gateway
         try:
@@ -348,8 +483,7 @@ class Orchestrator:
         """Add one fresh clip to the pool (frontend refill trigger)."""
         folder = self.settings.data_dir / session.id
         character = self._character_image(session)
-        gateway = GatewayClient(self.settings.gateway_url, self.settings.gateway_preset,
-                                self.settings.poll_interval)
+        gateway = self._gateway(session)
         await gateway.load_backend()
         self.idle_clients[session.id] = gateway
         try:
@@ -363,12 +497,11 @@ class Orchestrator:
         session.status = SessionStatus.PREPARING
         session.error = None
         self.save(session)
-        gateway = GatewayClient(self.settings.gateway_url, self.settings.gateway_preset,
-                                self.settings.poll_interval)
+        gateway = self._gateway(session)
         try:
             load_task = asyncio.create_task(gateway.load_backend())
             speech_task = None
-            if session.character_mode == "photoreal":
+            if session.character_mode == "photoreal" and not self._is_h3(session):
                 anchor_text = "Ah. Ah. Ah. Ah." if session.conversation_language == "en" else "あー、あー、あー、あー。"
                 speech_task = asyncio.create_task(synthesize_sentence(
                     self.settings.tts_url, session.voice_id, anchor_text
@@ -385,10 +518,15 @@ class Orchestrator:
             # (プール1周につき1本)がそのまま積み増しとして働き、満杯になるまで
             # 削除は発火しない。満杯後は従来どおり1本入替の回転になる。
             neutral = folder / "character-neutral.png"
+            if self._is_h3(session):
+                # H3: 発話アンカー(ref2va の参照)は入力画像をキャンバス比へ切り出した
+                # 1枚を全チャンクで使い回す(同一画像の再利用が latent/prefix キャッシュの
+                # ヒット条件)。LTX のような開口アンカー生成は不要。
+                self._write_h3_anchor(session, character, neutral)
             for pool_index in range(3):
                 await self._add_idle_to_pool(
                     session, gateway, folder, character,
-                    neutral_target=neutral if pool_index == 0 else None,
+                    neutral_target=neutral if pool_index == 0 and not self._is_h3(session) else None,
                 )
 
             if speech_task is not None:
@@ -422,6 +560,8 @@ class Orchestrator:
             session.character_preparation_seconds = round(time() - started_at, 3)
             session.status = SessionStatus.QUEUED
             self.save(session)
+            # 待機プール完成後に ref2va スタックを裏でプリワーム(登録 UX は待たせない)。
+            self.start_h3_warmup(session)
         except Exception as exc:
             session.status = SessionStatus.FAILED
             session.error = str(exc)
@@ -433,8 +573,8 @@ class Orchestrator:
                         turn_video_instruction: str = "",
                         turn_anchor: Path | None = None) -> None:
         folder = self.settings.data_dir / session.id
-        gateway = GatewayClient(self.settings.gateway_url, self.settings.gateway_preset,
-                                self.settings.poll_interval)
+        gateway = self._gateway(session)
+        is_h3 = self._is_h3(session)
         # 会話ターンの間、リアルタイム優先リースを保持する(H3 などの長尺ジョブを
         # gateway が入口で 409 にする)。ターンの頭で取得しないと、直前に滑り込んだ
         # H3 t2va(約25秒・中断不可)で最初のチャンクが丸ごと遅れる。renew は
@@ -460,7 +600,11 @@ class Orchestrator:
         video_queue: asyncio.Queue[Chunk | None] = asyncio.Queue()
         assistant_parts: list[str] = []
         session.assistant_text = ""
-        clip_duration = profile_duration(session.video_profile)
+        # H3 のクリップ長は 17n+5 フレーム格子(3.04/4.46/5.875/7.29s…)にサーバが丸める。
+        # 丸め後長 ≥ 発話長だけ保証すればよいので、LTX の固定尺の代わりに最小格子を使う。
+        h3_min_seconds = getattr(gateway, "min_seconds", 3.0)
+        clip_duration = (h3_clip_seconds(0.0, h3_min_seconds) if is_h3
+                         else profile_duration(session.video_profile))
 
         async def assemble_audio() -> None:
             elapsed = sum(float(item.duration or 0) for item in session.chunks)
@@ -468,6 +612,10 @@ class Orchestrator:
             parts_duration = 0.0
             started_at: float | None = None
             first_of_turn = True
+
+            # H3: 先頭チャンクは 3.04s(73f)に収まる短さで早く出し、後続は 5.875s 格子に
+            # 収まる長さ(session.target_chunk_seconds=5.8)まで貯める。LTX は従来どおり。
+            first_target = self.settings.h3_first_chunk_seconds
 
             async def emit() -> None:
                 nonlocal elapsed, parts, parts_duration, started_at, first_of_turn
@@ -480,9 +628,18 @@ class Orchestrator:
                 audio = folder / f"chunk-{index:03}.wav"
                 original_wav = join_wavs([part.wav for part in parts])
                 audio.write_bytes(original_wav)
-                (folder / f"chunk-{index:03}-condition.wav").write_bytes(
-                    pad_wav(original_wav, chunk_duration + 0.1)
-                )
+                if is_h3:
+                    # 条件音声をサーバが生成するクリップ長ちょうどへ無音パディングする
+                    # (vocal_lock は音声 latent 全長を固定するので、発話後は無音に固定される)。
+                    chunk_duration = max(h3_clip_seconds(parts_duration, h3_min_seconds),
+                                         parts_duration)
+                    (folder / f"chunk-{index:03}-condition.wav").write_bytes(
+                        pad_wav(original_wav, chunk_duration)
+                    )
+                else:
+                    (folder / f"chunk-{index:03}-condition.wav").write_bytes(
+                        pad_wav(original_wav, chunk_duration + 0.1)
+                    )
                 chunk = Chunk(
                     index=index, text="".join(part.text for part in parts), status="audio_ready",
                     duration=round(chunk_duration, 3), speech_duration=round(parts_duration, 3),
@@ -507,6 +664,9 @@ class Orchestrator:
                 # Do not merge another sentence when it would push the spoken
                 # chunk past the configured target. The previous 65% threshold
                 # favored fewer clips but frequently produced six-second chunks.
+                if (is_h3 and first_of_turn and parts
+                        and parts_duration + part_duration > first_target):
+                    await emit()
                 if parts and parts_duration + part_duration > session.target_chunk_seconds:
                     await emit()
                 if not parts:
@@ -516,7 +676,9 @@ class Orchestrator:
                 # Start immediately on a complete sentence, but do not turn an
                 # introductory comma clause into its own five-second video.
                 complete_sentence = text.rstrip().endswith(("。", "！", "？", "!", "?"))
-                if (first_of_turn and complete_sentence) or parts_duration >= session.target_chunk_seconds:
+                if ((first_of_turn and complete_sentence)
+                        or (is_h3 and first_of_turn and parts_duration >= first_target)
+                        or parts_duration >= session.target_chunk_seconds):
                     await emit()
             await emit()
             # ここでターンの最終チャンクが確定する。動画生成はTTSより遅いので、
@@ -641,6 +803,118 @@ class Orchestrator:
                     session.status = SessionStatus.PLAYABLE
                 self.save(session)
 
+        async def generate_video_h3() -> None:
+            """H3 ref2va chunk pipeline.
+
+            Unlike the LTX loop (one job at a time, end to end), consecutive chunks
+            overlap: chunk N+1 is submitted as soon as chunk N is confirmed running
+            at the backend, and the gateway admits it the moment N's denoise frees the
+            backend lock (N then decodes on the second GPU). Waiting, downloading and
+            publishing of each chunk run in its own finisher task.
+            """
+            assert isinstance(gateway, H3GatewayClient)
+            width, height = h3_profile_size(session.video_profile)
+            await self._ensure_h3_ready(session, gateway)
+            anchor = self._h3_anchor(session, character, folder)
+            anchor_id = await gateway.upload(anchor)
+            turn_anchor_id: str | None = None
+            if (turn_anchor is not None and session.turn_anchor_mode == "idle_frame"
+                    and turn_anchor.is_file()):
+                turn_ref = crop_to_aspect(turn_anchor, folder / "turn-anchor-h3.png", width, height)
+                turn_anchor_id = await gateway.upload(turn_ref)
+            first_video_of_turn = True
+            finishers: list[asyncio.Task] = []
+            previous_done: float | None = None
+
+            async def finish(chunk: Chunk, job_id: str, started_at: float,
+                             needs_mux: bool) -> None:
+                nonlocal previous_done
+                try:
+                    result = await gateway.wait(job_id)
+                    done_at = time()
+                    raw = folder / f"chunk-{chunk.index:03}-raw.mp4"
+                    await gateway.download(result["result"]["video_url"], raw)
+                    output = folder / f"chunk-{chunk.index:03}.mp4"
+                    if needs_mux:
+                        # Speech longer than the longest H3 clip: restore the full TTS audio
+                        # (the browser holds the last frame until it ends, as with LTX).
+                        await mux_original_audio(raw, folder / f"chunk-{chunk.index:03}.wav", output)
+                        raw.unlink(missing_ok=True)
+                    else:
+                        # H3 already muxed the conditioning audio (waveform corr. 0.997).
+                        raw.replace(output)
+                except Exception as exc:
+                    chunk.status, chunk.error = "failed", str(exc)
+                    self.save(session)
+                    raise
+                chunk.video_url = f"/api/sessions/{session.id}/chunks/{chunk.index}/video"
+                chunk.generation_seconds = round(done_at - started_at, 3)
+                chunk.status = "playable"
+                chunk.video_ready_at = time()
+                if previous_done is not None:
+                    sample = done_at - previous_done
+                    old = session.engine_cadence_seconds
+                    session.engine_cadence_seconds = round(
+                        sample if old is None else 0.5 * old + 0.5 * sample, 3)
+                previous_done = done_at
+                if sum(item.status == "playable" for item in session.chunks) >= session.startup_buffer_chunks:
+                    session.status = SessionStatus.PLAYABLE
+                self.save(session)
+
+            async def next_chunk() -> Chunk | None:
+                getter = asyncio.ensure_future(video_queue.get())
+                try:
+                    while True:
+                        pending = {item for item in finishers if not item.done()}
+                        await asyncio.wait({getter, *pending}, return_when=asyncio.FIRST_COMPLETED)
+                        for item in finishers:
+                            if item.done() and not item.cancelled() and item.exception() is not None:
+                                raise item.exception()
+                        if getter.done():
+                            return getter.result()
+                finally:
+                    if not getter.done():
+                        getter.cancel()
+
+            try:
+                while True:
+                    chunk = await next_chunk()
+                    if chunk is None or session.cancelled:
+                        break
+                    chunk.status = "video_generating"
+                    chunk.video_started_at = time()
+                    session.status = SessionStatus.GENERATING
+                    self.save(session)
+                    steps = min(H3_STEPS, session.video_steps) if first_video_of_turn else session.video_steps
+                    seed = (session.video_seed if session.character_mode == "photoreal"
+                            else session.video_seed + chunk.index)
+                    reference_id = anchor_id
+                    if first_video_of_turn and turn_anchor_id is not None:
+                        reference_id = turn_anchor_id
+                    audio_id = await gateway.upload(folder / f"chunk-{chunk.index:03}-condition.wav")
+                    clip_seconds = h3_clip_seconds(min(chunk.duration or 0.0, 15.0), h3_min_seconds)
+                    chunk.generated_profile = session.video_profile
+                    chunk.generated_steps = steps
+                    chunk.generated_seed = seed
+                    chunk.generated_frames = round(clip_seconds * 24)
+                    body = gateway.chunk_body(
+                        anchor_id=reference_id, audio_id=audio_id,
+                        prompt=self._prompt_h3(
+                            chunk.text, session.concept, session.action_level,
+                            session.video_instruction, turn_video_instruction),
+                        width=width, height=height, seconds=clip_seconds, seed=seed, steps=steps)
+                    # Returns once the backend really started this job (投入規律, プラン §4-1).
+                    job_id = await gateway.submit(body)
+                    first_video_of_turn = False
+                    needs_mux = (chunk.speech_duration or 0.0) > clip_seconds + 0.05
+                    finishers.append(asyncio.create_task(
+                        finish(chunk, job_id, time(), needs_mux)))
+                await asyncio.gather(*finishers)
+            finally:
+                for item in finishers:
+                    if not item.done():
+                        item.cancel()
+
         try:
             session.status = (
                 SessionStatus.SYNTHESIZING if narration_text is not None else SessionStatus.CHATTING
@@ -698,7 +972,7 @@ class Orchestrator:
             async with asyncio.TaskGroup() as group:
                 group.create_task(receiver_with_labels())
                 group.create_task(assemble_audio())
-                group.create_task(generate_video())
+                group.create_task(generate_video_h3() if is_h3 else generate_video())
             answer = "".join(assistant_parts).strip()
             if answer:
                 session.messages.append(ChatMessage(role="assistant", content=answer))

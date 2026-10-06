@@ -10,7 +10,7 @@
   <main>
     <header>
       <div class="header-row">
-        <p class="eyebrow">LTX-2.5 / AivisSpeech</p>
+        <p class="eyebrow" id="engine-eyebrow">LTX-2.5 / AivisSpeech</p>
         <label class="language-picker"><span data-i18n="uiLanguage">表示言語</span>
           <select id="ui-language" aria-label="表示言語">
             <option value="ja">日本語</option>
@@ -69,9 +69,26 @@
             <option value="strong" data-i18n="lipStrong">強い口動作（大きい開口）</option>
           </select>
         </label>
+        <label class="setup-setting"><span data-i18n="videoEngine">動画エンジン</span>
+          <select name="video_engine" id="video-engine">
+            <option value="ltx25" selected>LTX-2.5</option>
+            <option value="h3">MiniMax-H3 (ref2va)</option>
+          </select>
+          <small class="setting-help" id="engine-hint" data-i18n="engineH3Hint" hidden>H3は24fps固定・H3専用の解像度のみ。リップシンクは音声に直接追従します。</small>
+        </label>
         <label class="setup-setting"><span data-i18n="videoProfile">動画プロファイル</span>
           <select name="video_profile" id="video-profile">
-            <optgroup label="16fps・解像度優先" data-i18n-label="profile16">
+            <optgroup label="H3・24fps固定" data-i18n-label="profileH3" data-engine="h3" hidden disabled>
+              <option value="h3-portrait-352x608">352×608（縦・32GB級）</option>
+              <option value="h3-portrait-384x704">384×704（縦・96GB級）</option>
+              <option value="h3-landscape-608x352">608×352（横・32GB級・要確認）</option>
+              <option value="h3-landscape-704x384">704×384（横・96GB級・要確認）</option>
+              <option value="h3-3x4-384x512">384×512（3:4・32GB級・要確認）</option>
+              <option value="h3-4x3-512x384">512×384（4:3・32GB級・要確認）</option>
+              <option value="h3-3x4-416x544">416×544（3:4・96GB級・要確認）</option>
+              <option value="h3-4x3-544x416">544×416（4:3・96GB級・要確認）</option>
+            </optgroup>
+            <optgroup label="16fps・解像度優先" data-i18n-label="profile16" data-engine="ltx25">
               <option value="16fps-5x3" data-i18n="profilePeople">640×384（5:3 人物向け）</option>
               <option value="16fps-3x2" data-i18n="profileStable">576×384（3:2 安定）</option>
               <option value="16fps-640x480">640×480（4:3 高解像度）</option>
@@ -86,14 +103,14 @@
               <option value="16fps-portrait-480x640">480×640（3:4 縦型・高解像度）</option>
               <option value="16fps-portrait-480x800">480×800（3:5 縦型・最高解像度）</option>
             </optgroup>
-            <optgroup label="20fps・バランス" data-i18n-label="profile20">
+            <optgroup label="20fps・バランス" data-i18n-label="profile20" data-engine="ltx25">
               <option value="20fps-4x3-balanced" selected>512×384（4:3）</option>
               <option value="20fps-640x480">640×480（4:3 高解像度）</option>
               <option value="20fps-704x416">704×416（横 17:10）</option>
               <option value="20fps-portrait-480x640">480×640（3:4 縦型）</option>
               <option value="20fps-portrait-416x704">416×704（3:5 縦型）</option>
             </optgroup>
-            <optgroup label="24fps・動き優先" data-i18n-label="profile24">
+            <optgroup label="24fps・動き優先" data-i18n-label="profile24" data-engine="ltx25">
               <option value="24fps-3x2">480×320（3:2）</option>
               <option value="24fps-640x384">640×384（横 5:3）</option>
               <option value="24fps-704x416">704×416（横 17:10・上限）</option>
@@ -190,6 +207,6 @@
       <ol id="chunks"></ol>
     </section>
   </main>
-  <script src="/static/app.js?v=52"></script>
+  <script src="/static/app.js?v=53"></script>
 </body>
 </html>

@@ -69,6 +69,20 @@ https://github.com/user-attachments/assets/e15ecb4d-5237-447e-abc9-7a64e3fea5d9
 
 単一GPUでは動画生成が再生時間より遅い場合があります。現段階ではバッファが尽きると次チャンクの完成を待つ準リアルタイム方式です。
 
+## 動画エンジンの選択（LTX-2.5 / MiniMax-H3）
+
+既定は LTX-2.5（従来どおり）。`VIDEO_ENGINE=h3` またはUIの「動画エンジン」で MiniMax-H3 ref2va を選べます（設計: `docs/h3-engine-plan.md`）。
+
+| 環境変数 | 既定 | 内容 |
+|---|---|---|
+| `VIDEO_ENGINE` | `ltx25` | 新規セッションの既定エンジン |
+| `H3_GATEWAY_PRESET` | `dual-realtime-ref2va` | gateway の H3 プリセット（32GB級は `-32gb`） |
+| `H3_GPUS` | `0,1` | H3 の実行GPU（denoise=GPU0 / decode=GPU1） |
+| `H3_PROFILE` | `h3-portrait-352x608` | 既定解像度（96GB級は `h3-portrait-384x704` 等） |
+| `H3_FIRST_CHUNK_SECONDS` / `H3_TARGET_CHUNK_SECONDS` | `3.0` / `5.8` | 先頭／後続チャンクの目標発話長 |
+
+H3は24fps固定・H3専用解像度のみ。リップシンクは音声（vocal_lock）に直接追従し、原音はH3側でmux済みのためr-n-vでの差し替えは行いません。プリセット（キャラ保存）はエンジン別に保存・一覧されます。
+
 ## 動作環境の目安
 
 | GPU構成 | 判定 |

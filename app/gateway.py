@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+import math
 from pathlib import Path
 from urllib.parse import urljoin
 
+import cv2
 import httpx
+import numpy as np
 
 
 class GatewayError(RuntimeError):
@@ -103,6 +106,10 @@ def profile_duration(profile: str) -> float:
 
 
 class GatewayClient:
+    # リアルタイム優先リースを宣言するバックエンド名(gateway は「他バックエンド」の
+    # 生成を入口で 409 にする)。H3 クライアントは "h3" に差し替える。
+    lease_backend = "ltx25"
+
     def __init__(self, base_url: str, preset: str, poll_interval: float = 0.1):
         self.base_url = base_url.rstrip("/")
         self.preset = preset
@@ -124,7 +131,7 @@ class GatewayClient:
         他ターンが release した直後の renew は新しいリースとして受理されるため、
         呼び出し側は**返ってきた id で保持中の id を更新する**こと。
         """
-        body: dict = {"backend": "ltx25", "ttl_s": ttl_s}
+        body: dict = {"backend": self.lease_backend, "ttl_s": ttl_s}
         if lease_id:
             body["lease_id"] = lease_id
         try:
@@ -266,3 +273,299 @@ class GatewayClient:
                 with target.open("wb") as output:
                     async for block in response.aiter_bytes():
                         output.write(block)
+
+
+# ---------------------------------------------------------------------------
+# MiniMax-H3 エンジン(docs/h3-engine-plan.md)
+#
+# 既定の動画エンジンは LTX-2.5 のまま(上のコードは一切変更しない)。H3 は
+# セッション単位で選び、以下の定数・関数・クライアントだけが関与する。
+# ---------------------------------------------------------------------------
+
+ENGINES = ("ltx25", "h3")
+
+H3_FPS = 24                 # runner 定数(24fps 固定)。LTX の 16/20fps は使えない
+H3_MAX_SECONDS = 15.0       # サーバ側の上限(core/runner.py MAX_SECONDS)
+H3_REFERENCE_SHORT_EDGE = 1024
+H3_STEPS = 4
+
+# H3 専用の解像度プロファイル(プラン §3b)。32の倍数。リアルタイム成立は画素予算で
+# 決まる(~215k px = 32GB級、~246k px = 96GB級)。横型・4:3 系は縦型からの外挿で
+# 要1回確認(プラン記載)。値は (width, height)。
+H3_PROFILES: dict[str, tuple[int, int]] = {
+    "h3-portrait-352x608": (352, 608),      # 32GB級 縦(検証済み)
+    "h3-landscape-608x352": (608, 352),     # 32GB級 横(外挿)
+    "h3-4x3-512x384": (512, 384),           # 32GB級 4:3(外挿)
+    "h3-3x4-384x512": (384, 512),           # 32GB級 3:4(外挿)
+    "h3-portrait-384x704": (384, 704),      # 96GB級 縦(検証済み)
+    "h3-landscape-704x384": (704, 384),     # 96GB級 横(外挿)
+    "h3-4x3-544x416": (544, 416),           # 96GB級 4:3(外挿)
+    "h3-3x4-416x544": (416, 544),           # 96GB級 3:4(外挿)
+}
+DEFAULT_H3_PROFILE = "h3-portrait-352x608"
+
+# 待機クリップ(fl2va first=last=アンカー)のプロンプト。probe で実績のある文言
+# (2026-10-06: 口閉じ・同一性維持・先頭/末尾がアンカーへ復帰)。
+H3_IDLE_PROMPT = (
+    "The person stands calmly, breathing gently, blinking occasionally, "
+    "subtle natural idle motion, no talking, mouth closed."
+)
+H3_IDLE_SECONDS = 5.0
+
+
+def normalize_engine(value: str | None, default: str = "ltx25") -> str:
+    """Return a supported engine name (unknown values fall back to the default)."""
+    candidate = (value or "").strip().lower()
+    return candidate if candidate in ENGINES else default
+
+
+def h3_profile_size(profile: str) -> tuple[int, int]:
+    """(width, height) of an H3 profile; unknown keys fall back to the default."""
+    return H3_PROFILES.get(profile, H3_PROFILES[DEFAULT_H3_PROFILE])
+
+
+def h3_num_frames(seconds: float, min_seconds: float = 3.0) -> int:
+    """Frame count for a clip that is never shorter than `seconds` (17n+5 grid).
+
+    The server does clamp to [min, 15s] -> round(seconds*24) -> step up to the next
+    17n+5 (backends/minimax-h3/core/runner.py `seconds_to_num_frames()`). `round`
+    can fall up to half a frame short of the speech, so this uses ceil; sending
+    n/24 as `seconds` makes the server's round() reproduce exactly n.
+    """
+    clamped = max(min_seconds, min(H3_MAX_SECONDS, float(seconds)))
+    # 0.02 frame tolerance: durations are stored rounded to 1 ms (<= 0.012 frame), and a
+    # clip that lands exactly on a grid point must not be bumped to the next grid.
+    frames = math.ceil(clamped * H3_FPS - 0.02)
+    while frames % 17 != 5:
+        frames += 1
+    return frames
+
+
+def h3_clip_seconds(seconds: float, min_seconds: float = 3.0) -> float:
+    """Playback length of the clip the H3 server will generate for `seconds`."""
+    return h3_num_frames(seconds, min_seconds) / H3_FPS
+
+
+def _read_bgr(path: Path) -> np.ndarray:
+    data = np.fromfile(str(path), dtype=np.uint8)
+    image = cv2.imdecode(data, cv2.IMREAD_COLOR)
+    if image is None:
+        raise GatewayError(f"画像を読み込めません: {path}")
+    return image
+
+
+def _write_png(path: Path, image: np.ndarray) -> None:
+    ok, encoded = cv2.imencode(".png", image)
+    if not ok:
+        raise GatewayError(f"画像を書き出せません: {path}")
+    encoded.tofile(str(path))
+
+
+def cover_crop(source: Path, target: Path, width: int, height: int) -> Path:
+    """Resize-to-cover then center-crop to exactly width x height, saved as PNG.
+
+    fl2va treats `image` (first) and `last_image` differently (stretch vs
+    cover-crop), so a loopable first=last clip needs both frames pre-fitted to
+    the canvas — then both preprocessing paths are the identity (プラン §3).
+    """
+    image = _read_bgr(source)
+    src_h, src_w = image.shape[:2]
+    scale = max(width / src_w, height / src_h)
+    new_w = max(width, round(src_w * scale))
+    new_h = max(height, round(src_h * scale))
+    interpolation = cv2.INTER_AREA if scale < 1.0 else cv2.INTER_LANCZOS4
+    resized = cv2.resize(image, (new_w, new_h), interpolation=interpolation)
+    left = (new_w - width) // 2
+    top = (new_h - height) // 2
+    _write_png(target, resized[top:top + height, left:left + width])
+    return target
+
+
+def crop_to_aspect(source: Path, target: Path, width: int, height: int) -> Path:
+    """Center-crop to the canvas aspect ratio at native resolution (no resize).
+
+    Used for the ref2va speaking anchor: the framing matches the idle clips
+    while the server still gets full resolution (it normalises the short edge
+    itself via reference_image_short_edge).
+    """
+    image = _read_bgr(source)
+    src_h, src_w = image.shape[:2]
+    target_ratio = width / height
+    if src_w / src_h > target_ratio:
+        new_w, new_h = round(src_h * target_ratio), src_h
+    else:
+        new_w, new_h = src_w, round(src_w / target_ratio)
+    left = (src_w - new_w) // 2
+    top = (src_h - new_h) // 2
+    _write_png(target, image[top:top + new_h, left:left + new_w])
+    return target
+
+
+class H3GatewayClient(GatewayClient):
+    """MiniMax-H3 adapter behind the same gateway (backend="h3").
+
+    Differences from the LTX client that matter (all measured, プラン §4-1):
+    - Generation is submit() + wait(), not one blocking call. submit() returns
+      only after the job is confirmed running at the backend: a 202 means the
+      gateway accepted it, not that the backend started it, and a follow-up job
+      submitted in that window is rejected by the backend (409 -> failed).
+    - wait() uses the job *status* only. /api/progress is a global singleton the
+      gateway cannot attribute to a job (values go backwards while a previous
+      clip decodes), so progress values are never used for buffer maths.
+    - interrupt hits /h3/api/interrupt without a job id (stops whatever is in
+      its denoise phase).
+    - load_backend starts the process only; weights load on the first request.
+    """
+
+    engine = "h3"
+    lease_backend = "h3"
+
+    def __init__(self, base_url: str, preset: str, poll_interval: float = 0.1, *,
+                 gpus: str = "0,1", min_seconds: float = 3.0,
+                 extra_overrides: dict[str, str] | None = None,
+                 submit_deadline_s: float = 120.0, start_timeout_s: float = 240.0,
+                 reference_short_edge: int = H3_REFERENCE_SHORT_EDGE):
+        super().__init__(base_url, preset, poll_interval)
+        self.gpus = gpus
+        self.min_seconds = min_seconds
+        self.extra_overrides = dict(extra_overrides or {})
+        self.submit_deadline_s = submit_deadline_s
+        self.start_timeout_s = start_timeout_s
+        self.reference_short_edge = reference_short_edge
+        self.last_submit_retries = 0
+
+    # -- request builders (pure; unit-tested) ---------------------------------
+
+    def load_body(self) -> dict:
+        overrides = {"H3_MIN_SECONDS": f"{self.min_seconds:.1f}"}
+        overrides.update(self.extra_overrides)
+        return {"backend": "h3", "preset": self.preset, "gpus": self.gpus,
+                "toggles": {"turbo": True}, "overrides": overrides}
+
+    def chunk_body(self, *, anchor_id: str, audio_id: str, prompt: str, width: int,
+                   height: int, seconds: float, seed: int, steps: int = H3_STEPS) -> dict:
+        """Speaking chunk: ref2va, references = [anchor image, chunk wav] in this order."""
+        return {
+            "backend": "h3", "mode": "ref2v",
+            "params": {"prompt": prompt, "width": width, "height": height,
+                       "seconds": seconds, "steps": steps, "seed": seed},
+            "extra": {"reference_image_short_edge": self.reference_short_edge,
+                      "vocal_lock": True},
+            "asset_ids": [anchor_id, audio_id],
+            "auto_load": False,
+        }
+
+    def idle_body(self, *, image_id: str, width: int, height: int, seed: int,
+                  prompt: str = H3_IDLE_PROMPT, seconds: float = H3_IDLE_SECONDS) -> dict:
+        """Idle clip: fl2va with first = last = the canvas-fitted anchor, muted."""
+        return {
+            "backend": "h3", "mode": "flf2v",
+            "params": {"prompt": prompt, "width": width, "height": height,
+                       "seconds": seconds, "seed": seed},
+            "extra": {"mute": True, "turbo": True},
+            "asset_ids": [image_id, image_id],
+            "auto_load": False,
+        }
+
+    # -- backend lifecycle -----------------------------------------------------
+
+    async def load_backend(self) -> dict:
+        """Start the H3 process (weights load lazily on the first generation)."""
+        async with httpx.AsyncClient(timeout=660) as client:
+            response = await client.post(f"{self.base_url}/api/v1/backend/load",
+                                         json=self.load_body())
+        if response.is_error:
+            raise GatewayError(
+                f"H3エンジン準備失敗 HTTP {response.status_code}: {response.text[:500]}")
+        return response.json()
+
+    async def _post_interrupt(self) -> None:
+        async with httpx.AsyncClient(timeout=10) as client:
+            try:
+                # job_id 省略 = いま denoise 中のものを止める(プラン C-4)
+                await client.post(f"{self.base_url}/h3/api/interrupt", json={})
+            except httpx.HTTPError:
+                pass  # 中断は最善努力
+
+    # -- generation --------------------------------------------------------------
+
+    async def submit(self, body: dict) -> str:
+        """Submit a job and return its id once it is running at the backend."""
+        loop = asyncio.get_event_loop()
+        deadline = loop.time() + self.submit_deadline_s
+        self.last_job_id = None
+        self.last_submit_retries = 0
+        async with httpx.AsyncClient(timeout=180) as client:
+            while True:
+                if self.cancel_requested:
+                    raise GatewayError("動画生成がinterruptedになりました(送信前に中断)")
+                response = await client.post(f"{self.base_url}/api/v1/generate", json=body)
+                # 409 = backend busy (previous denoise still running) / not yet loaded.
+                if response.status_code == 409 and loop.time() < deadline:
+                    self.last_submit_retries += 1
+                    await asyncio.sleep(0.1)
+                    continue
+                if response.is_error:
+                    raise GatewayError(
+                        f"動画生成受付失敗 HTTP {response.status_code}: {response.text[:800]}")
+                break
+            job_id = response.json()["id"]
+            self.last_job_id = job_id
+            if self.cancel_requested:
+                await self._post_interrupt()
+            await self._wait_started(client, job_id)
+        return job_id
+
+    async def _wait_started(self, client: httpx.AsyncClient, job_id: str) -> None:
+        """Block until the backend holds its generation lock (job really started).
+
+        The gateway only sees "busy" through the backend's own lock, so a freshly
+        accepted job is invisible for a few ms. Submitting the next job before
+        this flips is what produced the 409 -> failed jobs in the cadence tests.
+        """
+        loop = asyncio.get_event_loop()
+        deadline = loop.time() + self.start_timeout_s
+        while True:
+            try:
+                status = await client.get(f"{self.base_url}/h3/api/status")
+                if status.is_success and status.json().get("busy"):
+                    return
+                job = await client.get(f"{self.base_url}/api/v1/jobs/{job_id}")
+                if job.is_success and job.json().get("status") in {
+                        "completed", "failed", "interrupted", "cancelled"}:
+                    return  # finished (or died) before we saw busy; wait() reports it
+            except (httpx.HTTPError, ValueError):
+                pass
+            if loop.time() > deadline:
+                raise GatewayError("H3ジョブがバックエンドで開始されませんでした(タイムアウト)")
+            await asyncio.sleep(0.02)
+
+    async def wait(self, job_id: str) -> dict:
+        """Poll the job status until completed. Progress values are ignored."""
+        async with httpx.AsyncClient(timeout=180) as client:
+            while True:
+                await asyncio.sleep(self.poll_interval)
+                response = await client.get(f"{self.base_url}/api/v1/jobs/{job_id}")
+                response.raise_for_status()
+                state = response.json()
+                if state["status"] == "completed":
+                    return state
+                if state["status"] == "interrupted":
+                    raise GatewayError(
+                        f"動画生成がinterruptedになりました: {state.get('error') or ''}")
+                if state["status"] in {"failed", "cancelled"}:
+                    raise GatewayError(state.get("error") or f"動画生成が{state['status']}になりました")
+
+    async def generate_blocking(self, body: dict) -> dict:
+        """submit() + wait() for callers that do not pipeline (idle clips, prewarm)."""
+        return await self.wait(await self.submit(body))
+
+
+def make_gateway(engine: str, settings) -> GatewayClient:
+    """Engine factory. ltx25 returns exactly the pre-existing client."""
+    if normalize_engine(engine) == "h3":
+        return H3GatewayClient(settings.gateway_url, settings.h3_gateway_preset,
+                               settings.poll_interval, gpus=settings.h3_gpus)
+    return GatewayClient(settings.gateway_url, settings.gateway_preset, settings.poll_interval)
+
+

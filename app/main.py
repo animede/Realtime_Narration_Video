@@ -19,7 +19,9 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from .config import settings
-from .gateway import STARTUP_PROFILES
+from .gateway import (
+    DEFAULT_H3_PROFILE, ENGINES, H3_FPS, H3_PROFILES, STARTUP_PROFILES, normalize_engine,
+)
 from .models import ChatMessage, NarrationSession
 from .orchestrator import Orchestrator
 
@@ -57,6 +59,23 @@ async def index():
     return FileResponse(static_dir / "index.html")
 
 
+@app.get("/api/config")
+async def engine_config():
+    """Engine selection data for the UI (default engine and the H3 profile table)."""
+    return {
+        "default_engine": normalize_engine(settings.video_engine),
+        "engines": list(ENGINES),
+        "h3": {
+            "fps": H3_FPS,
+            "default_profile": (settings.h3_profile if settings.h3_profile in H3_PROFILES
+                                else DEFAULT_H3_PROFILE),
+            "profiles": {key: {"width": w, "height": h} for key, (w, h) in H3_PROFILES.items()},
+            "first_chunk_seconds": settings.h3_first_chunk_seconds,
+            "target_chunk_seconds": settings.h3_target_chunk_seconds,
+        },
+    }
+
+
 @app.get("/healthz")
 async def healthz():
     checks: dict[str, object] = {"app": "ok"}
@@ -87,6 +106,7 @@ async def create_session(
     action_level: str = Form("low"),
     voice_id: int = Form(settings.tts_speaker_id),
     video_profile: str = Form("20fps-4x3-balanced"),
+    video_engine: str = Form(settings.video_engine),
     character_mode: str = Form("standard"),
     lip_sync_mode: str = Form("natural"),
     idle_motion_profile: str = Form("wide"),
@@ -110,11 +130,21 @@ async def create_session(
     cleaned_video_instruction = video_instruction.strip()
     if len(cleaned_video_instruction) > 1_000:
         raise HTTPException(400, "動画への指示は1,000文字以内にしてください")
-    if not 3.5 <= target_chunk_seconds <= 5.0:
+    if video_engine not in ENGINES:
+        raise HTTPException(400, "動画エンジンが不正です")
+    if video_engine == "h3":
+        # H3: fps は24固定、解像度は H3 専用表。チャンク長は H3 の格子(3.04/5.875s)に
+        # 合わせてサーバ設定から決める(フォームの値は使わない)。LTX のプロファイルが
+        # 渡されたら H3 の既定プロファイルへ読み替える。
+        if video_profile not in H3_PROFILES:
+            video_profile = (settings.h3_profile if settings.h3_profile in H3_PROFILES
+                             else DEFAULT_H3_PROFILE)
+        target_chunk_seconds = settings.h3_target_chunk_seconds
+    elif not 3.5 <= target_chunk_seconds <= 5.0:
         raise HTTPException(400, "チャンク目標時間は3.5～5.0秒にしてください")
     if not 1 <= startup_buffer_chunks <= 5:
         raise HTTPException(400, "先読みチャンク数は1～5にしてください")
-    if video_profile not in STARTUP_PROFILES:
+    if video_engine != "h3" and video_profile not in STARTUP_PROFILES:
         raise HTTPException(400, "動画プロファイルが不正です")
     if character_mode not in {"standard", "photoreal"}:
         raise HTTPException(400, "キャラクター種別が不正です")
@@ -143,7 +173,7 @@ async def create_session(
     session = NarrationSession(
         text=cleaned, concept=concept.strip(), video_instruction=cleaned_video_instruction,
         action_level=action_level,
-        voice_id=voice_id, video_profile=video_profile,
+        voice_id=voice_id, video_profile=video_profile, video_engine=video_engine,
         character_mode=character_mode, lip_sync_mode=lip_sync_mode,
         idle_motion_profile=idle_motion_profile, idle_liveliness=idle_liveliness,
         idle_pool_size=idle_pool_size, turn_anchor_mode=turn_anchor_mode,
@@ -204,6 +234,9 @@ class SessionSettingsUpdate(BaseModel):
 async def update_session_settings(session_id: str, request: SessionSettingsUpdate):
     session = get_session_or_404(session_id)
     values = request.model_dump(exclude_none=True)
+    if session.video_engine == "h3":
+        # H3 のチャンク長は格子に合わせた固定値(UI からは変更しない)。
+        values.pop("target_chunk_seconds", None)
     if "action_level" in values and values["action_level"] not in {"low", "medium", "high"}:
         raise HTTPException(400, "アクション量が不正です")
     if "lip_sync_mode" in values and values["lip_sync_mode"] not in {
@@ -352,7 +385,7 @@ async def get_session(session_id: str):
 # だけなので再生成ゼロで即時にセッションが立ち上がる。
 
 PRESET_SETTINGS_KEYS = [
-    "concept", "video_instruction", "action_level", "voice_id", "video_profile",
+    "video_engine", "concept", "video_instruction", "action_level", "voice_id", "video_profile",
     "character_mode", "lip_sync_mode", "idle_motion_profile", "idle_liveliness",
     "idle_pool_size", "turn_anchor_mode", "turn_end_mode", "camera_lock_enabled",
     "video_seed", "video_steps", "modality_scale_enabled",
@@ -414,15 +447,21 @@ async def create_preset(request: PresetCreateRequest):
 
 
 @app.get("/api/presets")
-async def list_presets():
+async def list_presets(engine: str | None = None):
+    """Saved characters. Presets are per engine (an LTX idle pool is not valid for H3):
+    pass `engine` to list only that engine's presets (default: all, each tagged)."""
     presets = []
     for meta_path in preset_dir().glob("*/preset.json"):
         try:
             meta = json.loads(meta_path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             continue
+        preset_engine = meta.get("settings", {}).get("video_engine", "ltx25")
+        if engine is not None and preset_engine != engine:
+            continue
         presets.append({
             "id": meta["id"], "name": meta.get("name", ""),
+            "video_engine": preset_engine,
             "created_at": meta.get("created_at", 0),
             "thumbnail_url": f"/api/presets/{meta['id']}/thumbnail",
             "video_profile": meta.get("settings", {}).get("video_profile", ""),
@@ -469,6 +508,9 @@ async def restore_preset(preset_id: str):
     session.status = "queued"
     orchestrator.save(session)
     orchestrator.register(session)
+    # The preset keeps its own engine; an H3 preset starts its process and warms ref2va
+    # in the background so the first turn does not pay the load + compile.
+    orchestrator.start_h3_warmup(session)
     return session
 
 

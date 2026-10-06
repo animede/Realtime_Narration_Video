@@ -43,6 +43,8 @@ const messages = {
     profilePeople: "640×384（5:3 人物向け）", profileStable: "576×384（3:2 安定）",
     profilePortrait34: "384×512（3:4 縦型）", profilePortrait35: "384×640（3:5 縦型・実験）",
     profilePortrait916: "288×512（9:16 縦型）",
+    videoEngine: "動画エンジン", profileH3: "H3・24fps固定",
+    engineH3Hint: "H3は24fps固定・H3専用の解像度のみ。チャンク長はH3の格子（先頭3秒/後続5.8秒）に自動で合わせます。",
     conversationLanguage: "会話言語", languageAuto: "自動（入力に合わせる）", languageJapanese: "日本語",
     languageEnglish: "英語", liveSettingHint: "緑枠：次の生成から即時反映", setupSettingHint: "黄枠：設定ボタンで反映",
     speakerId: "話者ID", videoSeed: "動画seed", chunkSeconds: "チャンク秒数", preloadCount: "先読み数",
@@ -87,6 +89,8 @@ const messages = {
     profilePeople: "640×384 (5:3 / people)", profileStable: "576×384 (3:2 / stable)",
     profilePortrait34: "384×512 (3:4 portrait)", profilePortrait35: "384×640 (3:5 portrait / experimental)",
     profilePortrait916: "288×512 (9:16 portrait)",
+    videoEngine: "Video engine", profileH3: "H3 / fixed 24 fps",
+    engineH3Hint: "H3 is fixed at 24 fps with its own resolution set. Chunk length follows the H3 frame grid automatically (first ~3 s, then ~5.8 s).",
     conversationLanguage: "Conversation language", languageAuto: "Auto (match input)", languageJapanese: "Japanese",
     languageEnglish: "English", liveSettingHint: "Green: applies to the next generation", setupSettingHint: "Yellow: use the settings button",
     speakerId: "Speaker ID", videoSeed: "Video seed", chunkSeconds: "Chunk seconds", preloadCount: "Startup buffer",
@@ -383,8 +387,49 @@ const profileSizes = {
   "20fps-portrait-480x640": [480, 640], "20fps-portrait-416x704": [416, 704],
   "24fps-640x384": [640, 384], "24fps-704x416": [704, 416],
   "24fps-portrait-384x640": [384, 640], "24fps-portrait-416x704": [416, 704],
-  "24fps-3x2": [480, 320], "24fps-portrait": [288, 512]
+  "24fps-3x2": [480, 320], "24fps-portrait": [288, 512],
+  "h3-portrait-352x608": [352, 608], "h3-portrait-384x704": [384, 704],
+  "h3-landscape-608x352": [608, 352], "h3-landscape-704x384": [704, 384],
+  "h3-3x4-384x512": [384, 512], "h3-4x3-512x384": [512, 384],
+  "h3-3x4-416x544": [416, 544], "h3-4x3-544x416": [544, 416]
 };
+
+// --- 動画エンジン選択(LTX-2.5 / MiniMax-H3) ---
+// H3 は fps=24 固定・専用の解像度表のみ。エンジンに属さないプロファイルは選択肢から外す。
+const engineSelect = document.querySelector("#video-engine");
+const engineHint = document.querySelector("#engine-hint");
+const engineEyebrow = document.querySelector("#engine-eyebrow");
+const chunkSecondsInput = form.querySelector('[name="target_chunk_seconds"]');
+let h3DefaultProfile = "h3-portrait-352x608";
+let defaultLtxProfile = "20fps-4x3-balanced";
+
+function applyEngine() {
+  const engine = engineSelect.value;
+  profileSelect.querySelectorAll("optgroup[data-engine]").forEach(group => {
+    const active = group.dataset.engine === engine;
+    group.hidden = !active;
+    group.disabled = !active;
+  });
+  const selected = profileSelect.selectedOptions[0];
+  if (!selected || selected.parentElement.dataset.engine !== engine) {
+    profileSelect.value = engine === "h3" ? h3DefaultProfile : defaultLtxProfile;
+  }
+  engineHint.hidden = engine !== "h3";
+  engineEyebrow.textContent = engine === "h3" ? "MiniMax-H3 / AivisSpeech" : "LTX-2.5 / AivisSpeech";
+  // H3 のチャンク長はサーバが格子に合わせて決める(フォームの値は使わない)
+  chunkSecondsInput.disabled = engine === "h3";
+  applyAspectRatio();
+}
+
+fetch("/api/config").then(response => response.json()).then(config => {
+  h3DefaultProfile = config.h3?.default_profile || h3DefaultProfile;
+  // 新規セッションの既定エンジンはサーバ設定(VIDEO_ENGINE)。復元済みセッションは触らない。
+  if (!sessionId && config.default_engine && engineSelect.value !== config.default_engine) {
+    engineSelect.value = config.default_engine;
+    applyEngine();
+    refreshPresets();
+  }
+}).catch(() => {});
 
 function applyAspectRatio() {
   const [width, height] = profileSizes[profileSelect.value];
@@ -392,7 +437,8 @@ function applyAspectRatio() {
   document.querySelector(".player-panel").classList.toggle("portrait", height > width);
 }
 profileSelect.addEventListener("change", applyAspectRatio);
-applyAspectRatio();
+engineSelect.addEventListener("change", () => { applyEngine(); refreshPresets(); });
+applyEngine();
 applyLanguage();
 
 function setDroppedFile(input, file) {
@@ -567,6 +613,9 @@ const presetStrip = document.querySelector("#preset-strip");
 const savePresetButton = document.querySelector("#save-preset");
 
 function applyPresetSettings(settings) {
+  // エンジンを先に反映(プロファイルの選択肢がエンジンごとに異なるため)
+  engineSelect.value = (settings || {}).video_engine || "ltx25";
+  applyEngine();
   Object.entries(settings || {}).forEach(([key, value]) => {
     const control = form.querySelector(`[name="${key}"]`);
     if (control) control.value = String(value);
@@ -576,7 +625,8 @@ function applyPresetSettings(settings) {
 
 async function refreshPresets() {
   try {
-    const response = await fetch("/api/presets");
+    // プリセットはエンジン別(LTX のアイドルプールは H3 では使えない)。選択中のエンジンのみ一覧する。
+    const response = await fetch(`/api/presets?engine=${encodeURIComponent(engineSelect.value)}`);
     const presets = await response.json();
     presetStrip.textContent = "";
     presetStrip.hidden = presets.length === 0;
@@ -940,6 +990,12 @@ function renderChunks(chunks) {
     const response = await fetch(`/api/sessions/${saved}`);
     if (!response.ok) throw new Error(String(response.status));
     const data = await response.json();
+    // 復元セッションのエンジン・解像度をフォームへ反映(プロファイル選択肢はエンジン別)
+    engineSelect.value = data.video_engine || "ltx25";
+    applyEngine();
+    if (data.video_profile && profileSizes[data.video_profile]) profileSelect.value = data.video_profile;
+    applyAspectRatio();
+    refreshPresets();
     adoptSession(data);
     renderChunks(data.chunks || []);
     statusLabel.textContent = t("configured");

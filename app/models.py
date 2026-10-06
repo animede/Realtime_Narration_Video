@@ -57,6 +57,9 @@ class NarrationSession(BaseModel):
     action_level: str = "low"
     voice_id: int
     video_profile: str = "20fps-4x3-balanced"
+    # 動画エンジン("ltx25" 既定 / "h3")。既存セッション・プリセットのJSONには
+    # 無いので、読み込み時は従来どおり ltx25 になる。
+    video_engine: str = "ltx25"
     character_mode: str = "standard"
     lip_sync_mode: str = "natural"
     idle_motion_profile: str = "wide"
@@ -81,6 +84,9 @@ class NarrationSession(BaseModel):
     idle_videos: list[str] = Field(default_factory=list)
     idle_pool_next: int = 0
     character_preparation_seconds: float | None = None
+    # H3 のみ: 連続チャンク完了間隔の実測(秒、EMA)とプリワーム所要時間。
+    engine_cadence_seconds: float | None = None
+    engine_prewarm_seconds: float | None = None
     llm_started_at: float | None = None
     llm_first_delta_at: float | None = None
     llm_completed_at: float | None = None
