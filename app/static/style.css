@@ -96,3 +96,12 @@ main.settings-hidden .input-panel { display: none; }
 
 /* チャンクのダウンロードリンク */
 #chunk-list a.chunk-dl, .chunk-dl { margin-left: 8px; font-weight: bold; font-size: 12px; }
+
+/* 待機動画の手動停止トグル(2026-10-07) */
+.stage-pause {
+  position: absolute; right: 10px; bottom: 10px; z-index: 5;
+  width: 40px; height: 40px; border-radius: 50%;
+  border: 1px solid rgba(255,255,255,.4); background: rgba(0,0,0,.45);
+  color: #fff; font-size: 18px; cursor: pointer; opacity: .55;
+}
+.stage-pause:hover { opacity: 1; }
