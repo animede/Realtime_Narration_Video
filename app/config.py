@@ -27,7 +27,7 @@ class Settings:
     h3_gpus: str = os.getenv("H3_GPUS", "0,1").strip()
     # H3 の既定解像度プロファイル(app/gateway.py の H3_PROFILES のキー)。
     # 32GB級は縦352x608、96GB級は縦384x704 等を選ぶ(プラン §3b)。
-    h3_profile: str = os.getenv("H3_PROFILE", "h3-portrait-352x608").strip()
+    h3_profile: str = os.getenv("H3_PROFILE", "h3-portrait-352x640").strip()
     # 先頭チャンク(3.04s=73f)と後続チャンク(5.875s=141f の格子に収まる 5.8s)の目標発話長。
     # 待機(FLF)の端点に「閉口アンカー(無音 ref2va の生成フレーム)」を使うか。
     # 既定 0 = 元画像の原寸切り出しを使う(ユーザー判定 2026-10-07: 生成フレームは
