@@ -103,5 +103,9 @@ main.settings-hidden .input-panel { display: none; }
   width: 40px; height: 40px; border-radius: 50%;
   border: 1px solid rgba(255,255,255,.4); background: rgba(0,0,0,.45);
   color: #fff; font-size: 18px; cursor: pointer; opacity: .55;
+  /* 絵文字グリフのベースラインで下へずれるため flex で厳密センタリング */
+  display: flex; align-items: center; justify-content: center;
+  padding: 0; line-height: 1;
 }
+.stage-pause[hidden] { display: none; }
 .stage-pause:hover { opacity: 1; }
