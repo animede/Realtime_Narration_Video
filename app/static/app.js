@@ -204,6 +204,10 @@ let idleAdvances = 0;
 let idleLastExtendAdvance = -99;
 
 function absorbIdlePool(session) {
+  // 旧セッションの SSE/ポーリング応答が遅れて届くと、作り直す前の待機クリップが
+  // 巡回キューへ混入する(再登録のたびに「数回だけ古い待機動画が出る」再発問題の
+  // 正体、2026-10-07 特定)。現在のセッション以外のデータは取り込まない。
+  if (!session || (session.id && sessionId && session.id !== sessionId)) return;
   (session.idle_videos || []).forEach(url => {
     if (!idleSeen.has(url)) {
       idleSeen.add(url);
@@ -213,6 +217,10 @@ function absorbIdlePool(session) {
   if (session.idle_videos && session.idle_videos.length) {
     const stamp = session.idle_video_ready_at || Date.now();
     idlePoolUrls = session.idle_videos.map(url => `${url}?t=${stamp}`);
+    // プールが作り直されたら(regenerate-idle 等)、もうサーバに無いクリップを
+    // キューから落とす。残すとバッファ済みの旧クリップが数回再生されてしまう。
+    const current = new Set(session.idle_videos);
+    idleQueue = idleQueue.filter(src => current.has(src.split("?")[0]));
   }
   if (session.idle_pool_size) idlePoolSize = session.idle_pool_size;
 }
@@ -717,6 +725,13 @@ form.addEventListener("submit", async (event) => {
   button.disabled = true;
   button.textContent = t("configuring");
   statusLabel.textContent = t("preparingModel");
+  // 登録の await 中(数分)に旧セッションの SSE が待機プールを再注入しないよう、
+  // 先に旧セッションから切り離して巡回を空にする(ドロップ済みの静止画が表示される)。
+  // 失敗時は旧セッションへ再接続して復帰する。
+  const previousSessionId = sessionId;
+  if (eventSource) { eventSource.close(); eventSource = null; }
+  sessionId = null;
+  resetIdlePool();
   try {
     const response = await fetch("/api/sessions", {method: "POST", body: new FormData(form)});
     const data = await response.json();
@@ -726,7 +741,14 @@ form.addEventListener("submit", async (event) => {
   } catch (error) {
     statusLabel.textContent = t("error", error.message);
     button.disabled = false;
-    button.textContent = sessionId ? t("configured") : t("setCharacter");
+    sessionId = previousSessionId;
+    if (sessionId) {
+      button.textContent = t("configured");
+      connectEvents();
+      poll();
+    } else {
+      button.textContent = t("setCharacter");
+    }
   }
 });
 
@@ -820,6 +842,8 @@ async function poll() {
 }
 
 function processSession(session) {
+  // 旧セッション宛の遅延イベントを丸ごと破棄(absorbIdlePool と同じ理由)。
+  if (!session || (session.id && sessionId && session.id !== sessionId)) return;
   latestSession = session;
   absorbIdlePool(session);
   statusLabel.textContent = t(session.status);
