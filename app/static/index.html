@@ -120,7 +120,10 @@
             </optgroup>
           </select>
         </label>
-        <label class="setup-setting"><span data-i18n="idleMotionProfile">アイドル動作（構図）</span>
+        <!-- アイドル動作(構図): IDLE_MOTION_PROFILES が全構図 1.0(2026-09-14 実測で
+             スロー再生を廃止)になって以降どのエンジンでも無機能のため UI から隠す
+             (2026-10-07)。値の保存互換のため DOM には残す。 -->
+        <label class="setup-setting" hidden><span data-i18n="idleMotionProfile">アイドル動作（構図）</span>
           <select name="idle_motion_profile">
             <option value="closeup" data-i18n="idleCloseup">顔アップ（自然な小動作）</option>
             <option value="upper_body" data-i18n="idleUpperBody">上半身（動きを抑える）</option>
@@ -208,6 +211,6 @@
       <ol id="chunks"></ol>
     </section>
   </main>
-  <script src="/static/app.js?v=54"></script>
+  <script src="/static/app.js?v=55"></script>
 </body>
 </html>
