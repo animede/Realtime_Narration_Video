@@ -61,7 +61,7 @@ def test_chunk_and_idle_requests():
                               height=608, seconds=73 / 24, seed=7)
     assert chunk["mode"] == "ref2v" and chunk["asset_ids"] == ["img", "wav"]
     assert chunk["params"]["steps"] == 4 and chunk["auto_load"] is False
-    assert chunk["extra"] == {"reference_image_short_edge": 1024, "vocal_lock": True}
+    assert chunk["extra"] == {"reference_image_short_edge": 768, "vocal_lock": True}
     idle = client.idle_body(image_id="img", width=352, height=608, seed=1)
     assert idle["mode"] == "flf2v" and idle["asset_ids"] == ["img", "img"]
     assert idle["extra"]["mute"] is True and idle["params"]["seconds"] == 5.0
