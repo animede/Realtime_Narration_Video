@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import math
+import os
 from time import monotonic
 from pathlib import Path
 from urllib.parse import urljoin
@@ -287,7 +288,10 @@ ENGINES = ("ltx25", "h3")
 
 H3_FPS = 24                 # runner 定数(24fps 固定)。LTX の 16/20fps は使えない
 H3_MAX_SECONDS = 15.0       # サーバ側の上限(core/runner.py MAX_SECONDS)
-H3_REFERENCE_SHORT_EDGE = 1024
+# ref2va の参照画像短辺。小さいほど denoise が短い(2026-10-07 実測、同一seed・384×512・
+# 73f: 2048=denoise 6.0s / 1024=2.5s / 768=2.0s。品質は3条件とも同一性維持・768が最シャープ)。
+# 768 を試すときは env H3_REFERENCE_SHORT_EDGE=768 で上書きする(既定は 1024 のまま)。
+H3_REFERENCE_SHORT_EDGE = int(os.getenv("H3_REFERENCE_SHORT_EDGE", "1024"))
 H3_STEPS = 4
 
 # H3 専用の解像度プロファイル(プラン §3b)。32の倍数。リアルタイム成立は画素予算で
