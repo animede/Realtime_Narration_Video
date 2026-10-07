@@ -396,6 +396,7 @@ PRESET_SETTINGS_KEYS = [
 PRESET_FILE_PATTERNS = [
     "character.*", "character-neutral.png", "character-speaking*.png",
     "character-idle-*.mp4",
+    "character-idle-anchor.png",  # H3 の閉口アンカー(復元時は再生成しない)
 ]
 
 

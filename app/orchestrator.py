@@ -10,10 +10,15 @@ from time import time
 from .chunker import SpeechPart
 from .config import Settings
 from .gateway import (
-    VIDEO_PROFILES, GatewayClient, H3GatewayClient, H3_IDLE_PROMPT, H3_IDLE_SECONDS,
-    H3_STEPS, cover_crop, crop_to_aspect, generation_profile, h3_clip_seconds,
-    h3_profile_size, make_gateway, profile_duration,
+    VIDEO_PROFILES, GatewayClient, H3GatewayClient, H3_CLOSED_ANCHOR_FRAME_S, H3_IDLE_PROMPT,
+    H3_IDLE_SECONDS, H3_STEPS, cover_crop, crop_to_aspect, generation_profile,
+    h3_clip_seconds, h3_profile_size, image_size, make_gateway, profile_duration,
 )
+
+# H3 の待機プール(fl2va first=last)専用の閉口アンカー。発話側の参照
+# (character-neutral.png)とは別物で、無音 ref2va の t=1.0s フレーム(prepare_character
+# で生成。プリセットに含まれ、復元時は再生成しない)。
+H3_IDLE_ANCHOR_NAME = "character-idle-anchor.png"
 from .llm import StreamingChatClient, pop_speakable
 from .models import ChatMessage, Chunk, NarrationSession, SessionStatus
 from .muxer import mux_original_audio
@@ -370,7 +375,13 @@ class Orchestrator:
         """
         assert isinstance(gateway, H3GatewayClient)
         width, height = h3_profile_size(session.video_profile)
-        fitted = cover_crop(character, folder / "character-h3-canvas.png", width, height)
+        closed_anchor = folder / H3_IDLE_ANCHOR_NAME
+        if closed_anchor.is_file():
+            # 閉口アンカーはキャンバス寸法そのもの(生成時に assert 済み)なので cover_crop 不要。
+            fitted = closed_anchor
+        else:
+            # 閉口アンカーを持たない旧プリセット/旧セッション: 従来どおり入力画像から切り出す。
+            fitted = cover_crop(character, folder / "character-h3-canvas.png", width, height)
         image_id = await gateway.upload(fitted)
         result = await gateway.generate_blocking(
             gateway.idle_body(image_id=image_id, width=width, height=height, seed=base_seed))
@@ -388,6 +399,45 @@ class Orchestrator:
             idle_locked, target, duration_seconds=clip_seconds - 1.0 / 24.0, slowdown=1.0)
         idle_raw.unlink(missing_ok=True)
         idle_locked.unlink(missing_ok=True)
+        return target
+
+    async def _make_h3_closed_anchor(self, session: NarrationSession,
+                                     gateway: GatewayClient, folder: Path,
+                                     neutral: Path) -> Path:
+        """Closed-mouth idle anchor: a silent 3 s ref2va, frame at t=1.0 s (2026-10-07 実測).
+
+        The idle clips are fl2va with first = last = anchor, so an anchor with open lips
+        gives an idle with an open mouth. vocal_lock freezes a silent wav -> the speaker
+        keeps the lips closed. The reference is the same character-neutral.png every
+        speaking chunk uses, so this job also warms the ref2va stack (compile + prefix /
+        latent caches) — it replaces the separate 73f `_warm_h3` for a fresh session.
+        """
+        assert isinstance(gateway, H3GatewayClient)
+        started = time()
+        width, height = h3_profile_size(session.video_profile)
+        silence = folder / "character-h3-closed-anchor.wav"
+        raw = folder / "character-h3-closed-anchor.mp4"
+        target = folder / H3_IDLE_ANCHOR_NAME
+        try:
+            seconds = h3_clip_seconds(3.0, gateway.min_seconds)
+            silence.write_bytes(silent_wav(seconds))
+            anchor_id, audio_id = await asyncio.gather(
+                gateway.upload(neutral), gateway.upload(silence))
+            body = gateway.closed_anchor_body(
+                anchor_id=anchor_id, audio_id=audio_id, width=width, height=height,
+                seed=session.video_seed)
+            result = await gateway.generate_blocking(body)
+            await gateway.download(result["result"]["video_url"], raw)
+            await self._frame_at(raw, target, H3_CLOSED_ANCHOR_FRAME_S)
+            got = image_size(target)
+            if got != (width, height):
+                target.unlink(missing_ok=True)
+                raise RuntimeError(
+                    f"閉口アンカーのサイズ {got} がプロファイル {(width, height)} と一致しません")
+        finally:
+            silence.unlink(missing_ok=True)
+            raw.unlink(missing_ok=True)
+        session.engine_prewarm_seconds = round(time() - started, 3)
         return target
 
     def start_h3_warmup(self, session: NarrationSession) -> None:
@@ -521,6 +571,10 @@ class Orchestrator:
                 # 1枚を全チャンクで使い回す(同一画像の再利用が latent/prefix キャッシュの
                 # ヒット条件)。LTX のような開口アンカー生成は不要。
                 self._write_h3_anchor(session, character, neutral)
+                # 閉口アンカー(無音 ref2va の t=1.0s)を前景で生成してから待機プールを作る。
+                # この 1 本が ref2va スタックのプリワームを兼ねる(start_h3_warmup 不要)。
+                await self._make_h3_closed_anchor(session, gateway, folder, neutral)
+                self.save(session)
             for pool_index in range(3):
                 await self._add_idle_to_pool(
                     session, gateway, folder, character,
@@ -562,8 +616,9 @@ class Orchestrator:
             session.character_preparation_seconds = round(time() - started_at, 3)
             session.status = SessionStatus.QUEUED
             self.save(session)
-            # 待機プール完成後に ref2va スタックを裏でプリワーム(登録 UX は待たせない)。
-            self.start_h3_warmup(session)
+            # H3 のプリワームは上の閉口アンカー生成(無音 ref2va)が兼ねるため、ここでは
+            # start_h3_warmup しない。プリセット復元(main.restore_preset)は閉口アンカーが
+            # ディスクにあり再生成しないので、そちらだけ従来の軽い 73f ウォームを維持する。
         except Exception as exc:
             session.status = SessionStatus.FAILED
             session.error = str(exc)

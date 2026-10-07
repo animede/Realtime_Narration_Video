@@ -184,3 +184,111 @@ def test_presets_carry_the_engine():
     source = Path("app/main.py").read_text(encoding="utf-8")
     assert '"video_engine", "concept"' in source
     assert 'preset_engine != engine' in source
+
+
+# --- 閉口アンカー(2026-10-07): 待機プールは無音 ref2va の t=1.0s フレームから作る -------
+
+class FakeH3Gateway(H3GatewayClient):
+    """Records uploads / jobs; never touches the network."""
+
+    def __init__(self):
+        super().__init__("http://gw", "p")
+        self.uploads: list[Path] = []
+        self.bodies: list[dict] = []
+
+    async def load_backend(self) -> dict:
+        return {}
+
+    async def upload(self, path: Path) -> str:
+        self.uploads.append(Path(path))
+        return f"asset{len(self.uploads)}"
+
+    async def generate_blocking(self, body: dict) -> dict:
+        self.bodies.append(body)
+        return {"result": {"video_url": "/x.mp4", "duration_s": 73 / 24}}
+
+    async def download(self, relative_url: str, target: Path) -> None:
+        Path(target).write_bytes(b"mp4")
+
+
+def _h3_orchestrator(tmp_path, monkeypatch, frame_size=(352, 608)):
+    orchestrator = Orchestrator(Settings(data_dir=tmp_path / "data"))
+    gateway = FakeH3Gateway()
+    monkeypatch.setattr(orchestrator, "_gateway", lambda session: gateway)
+
+    async def fake_frame_at(video, target, seconds):
+        fake_frame_at.seconds = seconds
+        cv2.imwrite(str(target), np.full((frame_size[1], frame_size[0], 3), 90, np.uint8))
+
+    async def fake_loop(source, target, **kwargs):
+        Path(target).write_bytes(b"loop")
+
+    monkeypatch.setattr(Orchestrator, "_frame_at", staticmethod(fake_frame_at))
+    monkeypatch.setattr(orchestrator, "_make_seamless_loop", fake_loop)
+    session = NarrationSession(text="", voice_id=1, video_engine="h3",
+                               video_profile="h3-portrait-352x608", camera_lock_enabled=False)
+    folder = orchestrator.settings.data_dir / session.id
+    folder.mkdir(parents=True)
+    character = folder / "character.png"
+    cv2.imwrite(str(character), np.full((960, 640, 3), 200, np.uint8))
+    orchestrator.register(session)
+    return orchestrator, gateway, session, folder, character, fake_frame_at
+
+
+def test_closed_anchor_request_is_a_silent_ref2va_on_the_neutral_reference():
+    client = H3GatewayClient("http://gw", "p")
+    body = client.closed_anchor_body(anchor_id="img", audio_id="wav", width=352, height=608,
+                                     seed=5)
+    assert body["mode"] == "ref2v" and body["asset_ids"] == ["img", "wav"]
+    assert body["extra"]["vocal_lock"] is True
+    assert body["params"]["seconds"] == 73 / 24 and body["params"]["steps"] == 4
+    assert body["params"]["prompt"] == (
+        "The person in the reference image stands calmly facing the camera, relaxed, "
+        "lips gently closed.")
+
+
+def test_prepare_character_builds_the_pool_from_the_closed_anchor(tmp_path, monkeypatch):
+    orchestrator, gateway, session, folder, character, frame = _h3_orchestrator(
+        tmp_path, monkeypatch)
+    asyncio.run(orchestrator.prepare_character(session, character))
+    anchor = folder / "character-idle-anchor.png"
+    neutral = folder / "character-neutral.png"
+    assert anchor.is_file() and neutral.is_file()
+    assert frame.seconds == 1.0
+    assert cv2.imread(str(anchor)).shape[:2] == (608, 352)
+    # job 1 = silent ref2va on the neutral reference; jobs 2-4 = the fl2va idle pool
+    assert [b["mode"] for b in gateway.bodies] == ["ref2v", "flf2v", "flf2v", "flf2v"]
+    assert gateway.uploads[0] == neutral                      # speech reference unchanged
+    assert gateway.uploads[2:] == [anchor] * 3                # pool first = last = closed anchor
+    assert all(b["asset_ids"][0] == b["asset_ids"][1] for b in gateway.bodies[1:])
+    assert session.engine_prewarm_seconds is not None         # the anchor job is the warm-up
+    assert session.character_prepared and len(session.idle_videos) == 3
+    assert orchestrator.h3_warmups == {}                      # no separate 73f warm-up
+    assert not list(folder.glob("character-h3-closed-anchor.*"))   # temp files cleaned up
+
+
+def test_closed_anchor_frame_must_match_the_profile(tmp_path, monkeypatch):
+    orchestrator, gateway, session, folder, character, _ = _h3_orchestrator(
+        tmp_path, monkeypatch, frame_size=(384, 704))
+    try:
+        asyncio.run(orchestrator.prepare_character(session, character))
+    except RuntimeError as exc:
+        assert "一致しません" in str(exc)
+    else:
+        raise AssertionError("size mismatch must fail")
+    assert not (folder / "character-idle-anchor.png").exists()
+    assert session.status == "failed"
+
+
+def test_idle_pool_falls_back_to_the_canvas_crop_without_a_closed_anchor(tmp_path, monkeypatch):
+    # old presets / sessions have no character-idle-anchor.png and must keep working
+    orchestrator, gateway, session, folder, character, _ = _h3_orchestrator(
+        tmp_path, monkeypatch)
+    asyncio.run(orchestrator.extend_idle_pool(session))
+    assert gateway.uploads == [folder / "character-h3-canvas.png"]
+    assert cv2.imread(str(gateway.uploads[0])).shape[:2] == (608, 352)
+
+
+def test_presets_include_the_closed_anchor():
+    source = Path("app/main.py").read_text(encoding="utf-8")
+    assert '"character-idle-anchor.png"' in source

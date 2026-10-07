@@ -307,11 +307,26 @@ DEFAULT_H3_PROFILE = "h3-portrait-352x608"
 
 # 待機クリップ(fl2va first=last=アンカー)のプロンプト。probe で実績のある文言
 # (2026-10-06: 口閉じ・同一性維持・先頭/末尾がアンカーへ復帰)。
+# プロンプト変更は 2026-10-07 の A/B で悪化を確認済み(「改善版」文言は口がむしろ開く)。
+# 変更しないこと。口が開く根因はアンカー画像自体の唇なので、アンカー側
+# (H3_CLOSED_ANCHOR_*)で解決する。
 H3_IDLE_PROMPT = (
     "The person stands calmly, breathing gently, blinking occasionally, "
     "subtle natural idle motion, no talking, mouth closed."
 )
 H3_IDLE_SECONDS = 5.0
+
+# 閉口アンカー(2026-10-07 実測): 待機 fl2va は first=last=アンカーなので、アンカーの唇が
+# 開いていると口が開いたままの待機になる(プロンプトでは勝てない)。無音 ref2va
+# (vocal_lock が無音を固定 → 口が閉じる)を 1 本生成し、その t≈1.0s のフレームを新アンカー
+# にすると 4 seed 中 3 つが全フレーム完全閉口になった。この 1 本は ref2va スタックの
+# プリワーム(compile + prefix/latent キャッシュ)も兼ねる。
+H3_CLOSED_ANCHOR_PROMPT = (
+    "The person in the reference image stands calmly facing the camera, relaxed, "
+    "lips gently closed."
+)
+H3_CLOSED_ANCHOR_SECONDS = 3.0
+H3_CLOSED_ANCHOR_FRAME_S = 1.0
 
 
 def normalize_engine(value: str | None, default: str = "ltx25") -> str:
@@ -360,6 +375,12 @@ def _write_png(path: Path, image: np.ndarray) -> None:
     if not ok:
         raise GatewayError(f"画像を書き出せません: {path}")
     encoded.tofile(str(path))
+
+
+def image_size(path: Path) -> tuple[int, int]:
+    """(width, height) of an image file."""
+    height, width = _read_bgr(path).shape[:2]
+    return width, height
 
 
 def cover_crop(source: Path, target: Path, width: int, height: int) -> Path:
@@ -455,6 +476,18 @@ class H3GatewayClient(GatewayClient):
             "asset_ids": [anchor_id, audio_id],
             "auto_load": False,
         }
+
+    def closed_anchor_body(self, *, anchor_id: str, audio_id: str, width: int, height: int,
+                           seed: int) -> dict:
+        """Silent ref2va whose t=1.0 s frame becomes the closed-mouth idle anchor.
+
+        Same request shape as a speaking chunk (so it doubles as the ref2va warm-up and
+        primes the same reference caches), with a silent wav and the closed-lips prompt.
+        """
+        return self.chunk_body(
+            anchor_id=anchor_id, audio_id=audio_id, prompt=H3_CLOSED_ANCHOR_PROMPT,
+            width=width, height=height,
+            seconds=h3_clip_seconds(H3_CLOSED_ANCHOR_SECONDS, self.min_seconds), seed=seed)
 
     def idle_body(self, *, image_id: str, width: int, height: int, seed: int,
                   prompt: str = H3_IDLE_PROMPT, seconds: float = H3_IDLE_SECONDS) -> dict:
