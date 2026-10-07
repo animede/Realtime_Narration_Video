@@ -248,8 +248,10 @@ def test_closed_anchor_request_is_a_silent_ref2va_on_the_neutral_reference():
 
 
 def test_prepare_character_builds_the_pool_from_the_closed_anchor(tmp_path, monkeypatch):
+    # opt-in (H3_CLOSED_IDLE_ANCHOR=1): 待機の端点に生成した閉口アンカーを使う。
     orchestrator, gateway, session, folder, character, frame = _h3_orchestrator(
         tmp_path, monkeypatch)
+    object.__setattr__(orchestrator.settings, "h3_closed_idle_anchor", True)  # frozen dataclass
     asyncio.run(orchestrator.prepare_character(session, character))
     anchor = folder / "character-idle-anchor.png"
     neutral = folder / "character-neutral.png"
@@ -260,6 +262,19 @@ def test_prepare_character_builds_the_pool_from_the_closed_anchor(tmp_path, monk
     assert [b["mode"] for b in gateway.bodies] == ["ref2v", "flf2v", "flf2v", "flf2v"]
     assert gateway.uploads[0] == neutral                      # speech reference unchanged
     assert gateway.uploads[2:] == [anchor] * 3                # pool first = last = closed anchor
+
+
+def test_prepare_character_default_uses_the_original_crop_for_idle(tmp_path, monkeypatch):
+    # 既定(H3_CLOSED_IDLE_ANCHOR=0): 閉口アンカーは生成される(プリワーク兼用)が、
+    # 待機の端点は元画像の原寸切り出し(画質優先、ユーザー判定 2026-10-07)。
+    orchestrator, gateway, session, folder, character, frame = _h3_orchestrator(
+        tmp_path, monkeypatch)
+    assert orchestrator.settings.h3_closed_idle_anchor is False
+    asyncio.run(orchestrator.prepare_character(session, character))
+    assert (folder / "character-idle-anchor.png").is_file()   # 生成自体はされる
+    canvas = folder / "character-h3-canvas.png"
+    assert [b["mode"] for b in gateway.bodies] == ["ref2v", "flf2v", "flf2v", "flf2v"]
+    assert gateway.uploads[2:] == [canvas] * 3                # 端点は元画像の切り出し
     assert all(b["asset_ids"][0] == b["asset_ids"][1] for b in gateway.bodies[1:])
     assert session.engine_prewarm_seconds is not None         # the anchor job is the warm-up
     assert session.character_prepared and len(session.idle_videos) == 3

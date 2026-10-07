@@ -377,11 +377,12 @@ class Orchestrator:
         assert isinstance(gateway, H3GatewayClient)
         width, height = h3_profile_size(session.video_profile)
         closed_anchor = folder / H3_IDLE_ANCHOR_NAME
-        if closed_anchor.is_file():
-            # 閉口アンカーはキャンバス寸法そのもの(生成時に assert 済み)なので cover_crop 不要。
+        if self.settings.h3_closed_idle_anchor and closed_anchor.is_file():
+            # 閉口アンカー(キャンバス寸法そのもの、生成時に assert 済み)。opt-in:
+            # 生成フレーム由来のため画質がやや荒く、既定は元画像の切り出しを使う
+            # (ユーザー判定 2026-10-07)。唇が開いた画像のキャラ向けの選択肢。
             fitted = closed_anchor
         else:
-            # 閉口アンカーを持たない旧プリセット/旧セッション: 従来どおり入力画像から切り出す。
             fitted = cover_crop(character, folder / "character-h3-canvas.png", width, height)
         image_id = await gateway.upload(fitted)
         result = await gateway.generate_blocking(
