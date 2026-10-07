@@ -373,6 +373,13 @@ def h3_num_frames(seconds: float, min_seconds: float = 3.0) -> int:
     frames = math.ceil(clamped * H3_FPS - 0.02)
     while frames % 17 != 5:
         frames += 1
+    # 上限 15s=360f はグリッド上に存在しない(17n+5 の近傍は 345 / 362)。切り上げが
+    # 上限を跨ぐとサーバが 400(got 362)を返す — 長文朗読の ~14.4s 超チャンクで実発
+    # (2026-10-07)。その場合は1段下げて 345(14.375s)にする。発話が 14.375s を超える
+    # 分(最大 ~0.6s)はサーバの vocal_lock が音声 latent を切り詰めるため末尾が
+    # わずかに欠けうるが、400 で丸ごと失敗するよりよい。
+    if frames > int(H3_MAX_SECONDS * H3_FPS):
+        frames -= 17
     return frames
 
 

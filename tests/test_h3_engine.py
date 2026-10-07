@@ -40,9 +40,13 @@ def test_h3_frame_grid_matches_the_server_rounding():
     # a duration already on the grid (stored rounded to 1 ms) stays on it
     assert [h3_num_frames(round(n / 24, 3)) for n in (73, 107, 141, 175)] == [73, 107, 141, 175]
     assert h3_clip_seconds(100.0) == h3_num_frames(15.0) / 24   # clamped at 15s
-    # the clip is never shorter than the speech it carries (up to the 15 s cap)
-    for speech in (0.2, 2.9, 3.05, 4.5, 5.79, 7.2, 14.9):
+    # the clip is never shorter than the speech it carries -- up to the grid cap
+    # 345f = 14.375s (the 15 s server cap is NOT on the 17n+5 grid; see
+    # test_h3_num_frames_never_exceeds_server_cap). Beyond that the clip clamps
+    # down and vocal_lock trims the speech tail server-side.
+    for speech in (0.2, 2.9, 3.05, 4.5, 5.79, 7.2, 14.3):
         assert h3_clip_seconds(speech) >= speech
+    assert h3_clip_seconds(14.9) == 345 / 24
 
 
 def test_load_request_is_process_only_with_turbo_and_min_seconds():
@@ -307,3 +311,17 @@ def test_idle_pool_falls_back_to_the_canvas_crop_without_a_closed_anchor(tmp_pat
 def test_presets_include_the_closed_anchor():
     source = Path("app/main.py").read_text(encoding="utf-8")
     assert '"character-idle-anchor.png"' in source
+
+
+def test_h3_num_frames_never_exceeds_server_cap():
+    """15s=360f はグリッド(17n+5)に無く、切り上げると 362 でサーバが 400 を返す。
+    上限を跨いだら 345(14.375s)へ下方クランプする(2026-10-07 長文朗読で実発)。"""
+    from app.gateway import H3_FPS, H3_MAX_SECONDS, h3_num_frames
+    cap = int(H3_MAX_SECONDS * H3_FPS)
+    assert h3_num_frames(15.0) == 345
+    assert h3_num_frames(14.9) == 345
+    assert h3_num_frames(99.0) == 345  # クランプ経由でも同じ
+    for tenth in range(30, 151):  # 3.0〜15.0s を総当たり
+        frames = h3_num_frames(tenth / 10)
+        assert frames % 17 == 5 and 72 <= frames <= cap, (tenth / 10, frames)
+
