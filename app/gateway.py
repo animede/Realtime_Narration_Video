@@ -601,9 +601,31 @@ class H3GatewayClient(GatewayClient):
                 if state["status"] in {"failed", "cancelled"}:
                     raise GatewayError(state.get("error") or f"動画生成が{state['status']}になりました")
 
+    @staticmethod
+    def is_busy_failure(exc: Exception) -> bool:
+        """gateway 受理(202)後にバックエンドの 409 でジョブが failed になったか。
+
+        gateway の受理はバックエンド着手を保証しない(受理〜着手の数ms〜の窓)。
+        通常は _wait_started の連鎖で自分のジョブ同士は衝突しないが、**別セッションの
+        待機補充**とはこの窓で衝突しうる(2026-10-07 実機: 旧セッションの補充中に
+        新規登録の閉口アンカー生成が 202→backend 409→failed→502 になった)。"""
+        msg = str(exc)
+        return "409" in msg and ("生成が進行中" in msg or "busy" in msg)
+
     async def generate_blocking(self, body: dict) -> dict:
-        """submit() + wait() for callers that do not pipeline (idle clips, prewarm)."""
-        return await self.wait(await self.submit(body))
+        """submit() + wait() for callers that do not pipeline (idle clips, prewarm).
+
+        busy 起因の failed(上記の受理後レース)は締切まで再投入する。"""
+        loop = asyncio.get_event_loop()
+        deadline = loop.time() + self.submit_deadline_s
+        while True:
+            try:
+                return await self.wait(await self.submit(body))
+            except GatewayError as exc:
+                if self.is_busy_failure(exc) and loop.time() < deadline and not self.cancel_requested:
+                    await asyncio.sleep(0.5)
+                    continue
+                raise
 
 
 def make_gateway(engine: str, settings) -> GatewayClient:

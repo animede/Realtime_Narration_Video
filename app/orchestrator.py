@@ -10,6 +10,7 @@ from time import time
 from .chunker import SpeechPart
 from .config import Settings
 from .gateway import (
+    GatewayError,
     VIDEO_PROFILES, GatewayClient, H3GatewayClient, H3_CLOSED_ANCHOR_FRAME_S, H3_IDLE_PROMPT,
     H3_IDLE_SECONDS, H3_STEPS, cover_crop, crop_to_aspect, generation_profile,
     h3_clip_seconds, h3_profile_size, image_size, make_gateway, profile_duration,
@@ -884,10 +885,18 @@ class Orchestrator:
             previous_done: float | None = None
 
             async def finish(chunk: Chunk, job_id: str, started_at: float,
-                             needs_mux: bool) -> None:
+                             needs_mux: bool, body: dict | None = None) -> None:
                 nonlocal previous_done
                 try:
-                    result = await gateway.wait(job_id)
+                    try:
+                        result = await gateway.wait(job_id)
+                    except GatewayError as exc:
+                        # 受理(202)後にバックエンド 409 で failed になるレース(別セッションの
+                        # 待機補充との衝突)。1 回だけ再投入する(gateway.py の is_busy_failure 参照)。
+                        if body is None or not gateway.is_busy_failure(exc):
+                            raise
+                        job_id = await gateway.submit(body)
+                        result = await gateway.wait(job_id)
                     done_at = time()
                     raw = folder / f"chunk-{chunk.index:03}-raw.mp4"
                     await gateway.download(result["result"]["video_url"], raw)
@@ -965,7 +974,7 @@ class Orchestrator:
                     first_video_of_turn = False
                     needs_mux = (chunk.speech_duration or 0.0) > clip_seconds + 0.05
                     finishers.append(asyncio.create_task(
-                        finish(chunk, job_id, time(), needs_mux)))
+                        finish(chunk, job_id, time(), needs_mux, body)))
                 await asyncio.gather(*finishers)
             finally:
                 for item in finishers:
