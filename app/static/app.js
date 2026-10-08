@@ -51,6 +51,7 @@ const messages = {
     videoSteps: "生成steps", modalityScale: "口動作強調（scale 1.3）", scaleOn: "有効", scaleOff: "無効（高速）",
     idleLiveliness: "待機の動き", idleLively: "活発（動き優先・既定）", idleCalm: "静か（完全ループ）",
     anchorSoften: "発話参照のソフト化（H3）", anchorSoftenNone: "なし（参照写真そのまま）", anchorSoftenWeak: "弱（テカリを少し抑える）", anchorSoftenMedium: "中（待機の質感に寄せる）", anchorSoftenHint: "発話動画は参照写真の肌の光沢を再現します。ソフト化で待機動画との質感差を縮めます（次のターンから反映）。",
+    idleMode: "待機動画の生成方式（H3）", idleModeFl2va: "ループ合成（既定・継ぎ目なし）", idleModeSilent: "無音会話モデル（24GB級向け・切替はカット）", idleModeHint: "無音会話モデルは待機専用モデルを使わないため低VRAM構成でも動きます。次の補充クリップから反映（すぐ替えるには待機の再生成）。",
     idlePoolSize: "待機動画の本数", idlePool3: "3本（登録が速い）", idlePool4: "4本", idlePool5: "5本（追い生成が減り会話と衝突しにくい）", idlePool6: "6本", idlePool7: "7本（追い生成が最少・ランダム再生）", idlePoolHint: "初期登録は常に3本だけ生成し、待機中に1本ずつ設定数まで積み増します。多いほど追い生成の頻度が下がり、6本以上はランダム順で再生します。",
     cameraLock: "カメラロック", cameraLockOn: "有効（ドリフト固定）", cameraLockOff: "無効（生成のまま）",
     turnAnchorMode: "会話開始画像", turnAnchorSpeaking: "発話アンカー（口動作優先）", turnAnchorIdle: "待機フレーム（連続性優先）",
@@ -98,6 +99,7 @@ const messages = {
     videoSteps: "Video steps", modalityScale: "Mouth emphasis (scale 1.3)", scaleOn: "Enabled", scaleOff: "Disabled (fast)",
     idleLiveliness: "Idle motion", idleLively: "Lively (more motion, default)", idleCalm: "Calm (perfect loop)",
     anchorSoften: "Speech reference softening (H3)", anchorSoftenNone: "None (photo as-is)", anchorSoftenWeak: "Weak (reduce sheen slightly)", anchorSoftenMedium: "Medium (match idle look)", anchorSoftenHint: "Speech clips reproduce the reference photo's skin sheen; softening narrows the gap with idle clips (applies from the next turn).",
+    idleMode: "Idle clip engine (H3)", idleModeFl2va: "Loop composite (default, seamless)", idleModeSilent: "Silent speech model (for 24GB-class, hard-cut switches)", idleModeHint: "The silent speech model skips the idle-only model, so low-VRAM setups work. Applies from the next pool refill (use idle regeneration to switch now).",
     idlePoolSize: "Idle clip count", idlePool3: "3 (faster setup)", idlePool4: "4", idlePool5: "5 (fewer refreshes, fewer chat conflicts)", idlePool6: "6", idlePool7: "7 (fewest refreshes, random playback)", idlePoolHint: "Setup always generates just 3 clips; the pool then grows one clip at a time while idle. Larger pools refresh less often, and 6+ clips play in random order.",
     cameraLock: "Camera lock", cameraLockOn: "Enabled (pins drift)", cameraLockOff: "Disabled (as generated)",
     turnAnchorMode: "Turn start image", turnAnchorSpeaking: "Speaking anchor (best lip motion)", turnAnchorIdle: "Idle frame (best continuity)",
@@ -406,7 +408,7 @@ const liveSettingNames = [
   "concept", "video_instruction", "action_level", "lip_sync_mode", "conversation_language", "voice_id",
   "video_seed", "video_steps", "modality_scale_enabled", "idle_liveliness",
   "camera_lock_enabled", "turn_anchor_mode", "turn_end_mode", "target_chunk_seconds", "startup_buffer_chunks",
-  "idle_pool_size", "h3_anchor_soften"
+  "idle_pool_size", "h3_anchor_soften", "h3_idle_mode"
 ];
 const profileSizes = {
   "16fps-5x3": [640, 384], "16fps-3x2": [576, 384],

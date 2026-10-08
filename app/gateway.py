@@ -386,6 +386,22 @@ H3_CLOSED_ANCHOR_PROMPT = (
 H3_CLOSED_ANCHOR_SECONDS = 3.0
 H3_CLOSED_ANCHOR_FRAME_S = 1.0
 
+# 無音 ref2va 待機(h3_idle_mode="silent_ref2va"、2026-10-08 実測)。fl2va(base
+# transformer)を使わないため ref2va-only 構成(movie-server プリセット
+# ref2va-only-32gb/-24gb、24GB 単騎でも成立)で待機が生成できる。
+# 文言は実測で確定済み・変更しないこと(movie-server docs/h3-single-gpu-32gb-20261007.md):
+# - 固定カメラ句は**文頭**が最強(背景並進 399.7→7.0px。文末だと 17.1px。
+#   tpose の「末尾最強」は Qwen 系の知見で H3 には当てはまらない)
+# - ショットサイズ句で開始構図の多数派が顔幅 ±4% に揃う(外れ値 seed は残るため
+#   orchestrator 側の構図スケールフィルタと二段構え)
+# - 音声参照なし + mute でも口は閉じたまま(7 クリップ実測)。瞬き・視線は残る。
+H3_SILENT_IDLE_PROMPT = (
+    "Static locked-off tripod shot with fixed framing, the background stays perfectly "
+    "still. Medium shot at a constant camera distance, the subject framed from the "
+    "chest up, matching the reference image framing. A person waiting calmly, idle, "
+    "small natural movements, blinking."
+)
+
 
 def normalize_engine(value: str | None, default: str = "ltx25") -> str:
     """Return a supported engine name (unknown values fall back to the default)."""
@@ -563,6 +579,25 @@ class H3GatewayClient(GatewayClient):
                        "seconds": seconds, "seed": seed},
             "extra": {"mute": True, "turbo": True},
             "asset_ids": [image_id, image_id],
+            "auto_load": False,
+        }
+
+    def silent_idle_body(self, *, anchor_id: str, width: int, height: int, seed: int,
+                         seconds: float = H3_IDLE_SECONDS) -> dict:
+        """無音 ref2va 待機クリップ(h3_idle_mode="silent_ref2va")。
+
+        音声参照なし(references = 画像1枚)+ `seconds` 指定 + mute。fl2va と違い
+        完全ループしない(プール切替はハードカット)が、base transformer を使わない
+        ので ref2va-only 構成でも待機が作れる。発話チャンクと同じ参照画像を使う
+        (speech⇄idle の構図連続性は fl2va より良い、2026-10-08 実測)。
+        """
+        return {
+            "backend": "h3", "mode": "ref2v",
+            "params": {"prompt": H3_SILENT_IDLE_PROMPT, "width": width, "height": height,
+                       "seconds": seconds, "steps": H3_STEPS, "seed": seed},
+            "extra": {"reference_image_short_edge": self.reference_short_edge,
+                      "mute": True},
+            "asset_ids": [anchor_id],
             "auto_load": False,
         }
 

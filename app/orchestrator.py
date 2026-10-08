@@ -399,6 +399,9 @@ class Orchestrator:
         from closing (probe 2026-10-06: ends return to the anchor at 33 dB).
         """
         assert isinstance(gateway, H3GatewayClient)
+        if getattr(session, "h3_idle_mode", "fl2va") == "silent_ref2va":
+            return await self._build_idle_silent_ref2va(
+                session, gateway, folder, character, target, base_seed)
         width, height = h3_profile_size(session.video_profile)
         closed_anchor = folder / H3_IDLE_ANCHOR_NAME
         if self.settings.h3_closed_idle_anchor and closed_anchor.is_file():
@@ -425,6 +428,131 @@ class Orchestrator:
             idle_locked, target, duration_seconds=clip_seconds - 1.0 / 24.0, slowdown=1.0)
         idle_raw.unlink(missing_ok=True)
         idle_locked.unlink(missing_ok=True)
+        return target
+
+    # silent_ref2va 待機の開始ショットサイズ許容幅(基準フレームとの背景スケール比)。
+    # 2026-10-08 実測: 多数派は ±4% に揃い、外れ値は +25% 級(約1/4の seed)。
+    _H3_IDLE_SCALE_TOL = 0.12
+    _H3_IDLE_SCALE_BASE = "character-idle-scale-base.png"
+
+    @staticmethod
+    def _save_first_frame(video: Path, target: Path) -> bool:
+        import cv2
+
+        cap = cv2.VideoCapture(str(video))
+        ok, frame = cap.read()
+        cap.release()
+        if ok:
+            cv2.imwrite(str(target), frame)
+        return bool(ok)
+
+    @staticmethod
+    def _idle_scale_between(base_png: Path, other_png: Path) -> float | None:
+        """2枚の frame0 の相対スケールを背景の ORB 特徴 + 相似変換推定で測る。
+
+        人物(中央〜下)をマスクして背景だけで推定する。マッチが取れない(None)のは
+        「構図が大きく違う」サインなので、呼び出し側は外れ値として扱う
+        (cv2 5.0 は CascadeClassifier が無いため顔検出ではなくこの方式。測定系は
+        movie-server docs/h3-single-gpu-32gb-20261007.md のドリフト計測と同一)。
+        """
+        import cv2
+        import numpy as np
+
+        a = cv2.imread(str(base_png), cv2.IMREAD_GRAYSCALE)
+        b = cv2.imread(str(other_png), cv2.IMREAD_GRAYSCALE)
+        if a is None or b is None or a.shape != b.shape:
+            return None
+        h, w = a.shape
+        mask = np.full((h, w), 255, np.uint8)
+        mask[int(h * 0.10):, int(w * 0.18):int(w * 0.82)] = 0
+        orb = cv2.ORB_create(1500)
+        k0, d0 = orb.detectAndCompute(a, mask)
+        k1, d1 = orb.detectAndCompute(b, mask)
+        if d0 is None or d1 is None or len(k0) < 8 or len(k1) < 8:
+            return None
+        matches = sorted(cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True).match(d0, d1),
+                         key=lambda m: m.distance)[:120]
+        if len(matches) < 8:
+            return None
+        p0 = np.float32([k0[m.queryIdx].pt for m in matches])
+        p1 = np.float32([k1[m.trainIdx].pt for m in matches])
+        affine, inliers = cv2.estimateAffinePartial2D(
+            p0, p1, method=cv2.RANSAC, ransacReprojThreshold=2.0)
+        if affine is None or inliers is None or int(inliers.sum()) < 8:
+            return None
+        return float(np.sqrt(affine[0, 0] ** 2 + affine[0, 1] ** 2))
+
+    async def _build_idle_silent_ref2va(self, session: NarrationSession,
+                                        gateway: GatewayClient, folder: Path,
+                                        character: Path, target: Path,
+                                        base_seed: int) -> Path:
+        """無音 ref2va 待機クリップ(h3_idle_mode="silent_ref2va")。
+
+        fl2va と違い base transformer を使わない(movie-server の ref2va-only
+        プリセット = 24GB 単騎等で待機が成立する)。参照は発話チャンクと同一
+        (ソフト化設定も同じ): speech⇄idle の質感・構図の連続性を揃える。
+        完全ループしないためプール切替はハードカット(ユーザー判断 2026-10-08)。
+
+        外れ値フィルタ: seed により開始ショットサイズが +25% 級に寄ることがある
+        (プロンプトでは抑え切れない。参照画像基準は逆選別になる — モデルは参照
+        より引いた構図に系統的に落ち着く)。最初に採用したクリップの frame0 を
+        基準画像として保存し、以後の候補は背景スケールが ±12% を外れたら 1 回
+        だけ別 seed で再生成する。再試行も外れていて、かつ初回と再試行が互いに
+        一致する場合は基準側が外れ値だったとみなし基準を差し替える(2対1 の
+        多数決、自己修復)。
+        """
+        assert isinstance(gateway, H3GatewayClient)
+        width, height = h3_profile_size(session.video_profile)
+        neutral = self._h3_anchor(session, character, folder)
+        reference = self._soften_h3_reference(session, neutral, folder)
+        anchor_id = await gateway.upload(reference)
+        candidate = folder / "character-idle-candidate.mp4"
+        base_png = folder / self._H3_IDLE_SCALE_BASE
+        frame_png = folder / "character-idle-candidate-frame.png"
+        first_png = folder / "character-idle-candidate-frame0.png"
+
+        def fits(scale: float | None) -> bool:
+            return scale is not None and abs(scale - 1.0) <= self._H3_IDLE_SCALE_TOL
+
+        for attempt in range(2):
+            result = await gateway.generate_blocking(gateway.silent_idle_body(
+                anchor_id=anchor_id, width=width, height=height,
+                seed=base_seed + attempt * 7919))
+            await gateway.download(result["result"]["video_url"], candidate)
+            got_frame = await asyncio.to_thread(self._save_first_frame, candidate, frame_png)
+            if not got_frame:
+                break
+            if not base_png.is_file():
+                shutil.copyfile(frame_png, base_png)
+                break
+            scale = await asyncio.to_thread(self._idle_scale_between, base_png, frame_png)
+            if fits(scale):
+                break
+            if attempt == 0:
+                shutil.copyfile(frame_png, first_png)
+                logger.info(
+                    "silent idle: ショットサイズ外れ値 (基準比 scale=%s) -- 別seedで再生成",
+                    f"{scale:.3f}" if scale is not None else "推定不能")
+                continue
+            pair = await asyncio.to_thread(self._idle_scale_between, first_png, frame_png)
+            if fits(pair):
+                logger.info(
+                    "silent idle: 新クリップ2本が一致 (相互scale=%.3f)、基準フレームを外れ値として差し替え",
+                    pair)
+                shutil.copyfile(frame_png, base_png)
+            else:
+                logger.warning(
+                    "silent idle: 再試行も外れ値 (基準比 scale=%s) -- このまま採用",
+                    f"{scale:.3f}" if scale is not None else "推定不能")
+        first_png.unlink(missing_ok=True)
+        frame_png.unlink(missing_ok=True)
+        if session.camera_lock_enabled:
+            locked = folder / "character-idle-locked.mp4"
+            await asyncio.to_thread(self._lock_camera, candidate, locked)
+            locked.replace(target)
+            candidate.unlink(missing_ok=True)
+        else:
+            candidate.replace(target)
         return target
 
     async def _make_h3_closed_anchor(self, session: NarrationSession,

@@ -68,6 +68,10 @@ class NarrationSession(BaseModel):
     # 照明)を忠実に再現するため、テカリは参照側のエッジ保存ソフト化で抑える
     # (2026-10-08 A/B: lapvar 91 -> 78(weak)-> 61(medium)。プロンプトでは動かない)。
     h3_anchor_soften: str = "none"
+    # H3 待機クリップの生成方式。"fl2va"(既定、first=last アンカーの完全ループ)/
+    # "silent_ref2va"(無音 ref2va。base transformer 不要 = ref2va-only プリセット
+    # (24GB 単騎等)向け。完全ループしないのでプール切替はハードカット)。
+    h3_idle_mode: str = "fl2va"
     idle_pool_size: int = 5
     turn_anchor_mode: str = "speaking"
     turn_end_mode: str = "free"

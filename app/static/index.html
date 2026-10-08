@@ -146,6 +146,13 @@
           </select>
           <small class="setting-help" data-i18n="anchorSoftenHint">発話動画は参照写真の肌の光沢を再現します。ソフト化で待機動画との質感差を縮めます（次のターンから反映）。</small>
         </label>
+        <label class="live-setting"><span data-i18n="idleMode">待機動画の生成方式（H3）</span>
+          <select name="h3_idle_mode">
+            <option value="fl2va" selected data-i18n="idleModeFl2va">ループ合成（既定・継ぎ目なし）</option>
+            <option value="silent_ref2va" data-i18n="idleModeSilent">無音会話モデル（24GB級向け・切替はカット）</option>
+          </select>
+          <small class="setting-help" data-i18n="idleModeHint">無音会話モデルは待機専用モデルを使わないため低VRAM構成でも動きます。次の補充クリップから反映（すぐ替えるには待機の再生成）。</small>
+        </label>
         <label class="live-setting"><span data-i18n="idlePoolSize">待機動画の本数</span>
           <select name="idle_pool_size">
             <option value="3" data-i18n="idlePool3">3本（登録が速い）</option>
