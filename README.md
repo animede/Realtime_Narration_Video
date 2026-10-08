@@ -8,6 +8,8 @@
 
 コンパニオンアプリとして、本アプリをヘッドレスのキャラクターレンダリングサービスとして使う**音声会話クライアント** [Realtime_Conversation_Video](https://github.com/animede/Realtime_Conversation_Video)(マイクVAD→LLM `input_audio` 直渡し、ROLE注入、履歴要約)があります。
 
+動画生成のベース技術は、diffusers 実装の自作エンジン **[Diffusers-LTX2.5](https://github.com/animede/diffusers-ltx2_5)** と **[Diffusers-MinimaxH3](https://github.com/animede/Diffusers_minimax-h3)** です。量子化・低VRAM化・リアルタイム化の技術詳細や単体サーバとしての使い方は、それぞれのリポジトリを参照してください。
+
 開発中に行った速度・解像度・steps・実写リップシンクの比較は、[改良の経緯と測定記録](docs/development-notes.md)にまとめています。構成、API、パラメータ、運用方法は[テクニカルガイド](docs/technical-guide.md)を参照してください。
 
 ## 動作サンプル

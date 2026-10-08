@@ -8,6 +8,8 @@ This proof-of-concept application sends chat input to an OpenAI-compatible Gemma
 
 A companion app, [Realtime_Conversation_Video](https://github.com/animede/Realtime_Conversation_Video), turns this into a **voice conversation client** — mic VAD feeding the LLM's `input_audio` directly, ROLE injection, and rolling history summarization — using this app as a headless character-rendering service.
 
+The underlying video-generation technology comes from my diffusers-based engines **[Diffusers-LTX2.5](https://github.com/animede/diffusers-ltx2_5)** and **[Diffusers-MinimaxH3](https://github.com/animede/Diffusers_minimax-h3)**. See those repositories for the quantization / low-VRAM / realtime techniques and for running them as standalone servers.
+
 See [Development History and Measurements](docs/development-notes.en.md) for the latency, resolution, step-count, and photorealistic lip-motion experiments. See the [Technical Guide](docs/technical-guide.en.md) for the architecture, API, parameters, and operations.
 
 ## Demo
