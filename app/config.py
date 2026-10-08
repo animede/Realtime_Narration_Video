@@ -35,7 +35,11 @@ class Settings:
     # 待機の口開きが目立つ場合のみ 1 にする(閉口アンカー自体は常に生成される —
     # ref2va プリワークを兼ねるため)。
     h3_closed_idle_anchor: bool = os.getenv("H3_CLOSED_IDLE_ANCHOR", "0").strip() == "1"
-    h3_first_chunk_seconds: float = float(os.getenv("H3_FIRST_CHUNK_SECONDS", "3.0"))
+    # 2026-10-08: 3.0(73f)-> 2.33(56f、17n+5 グリッドの1段下)。初動 -0.7s 前後。
+    # 2.34 以上にすると ceil が 57f -> 73f へ切り上がる点に注意(2.33 が 56f の上限)。
+    h3_first_chunk_seconds: float = float(os.getenv("H3_FIRST_CHUNK_SECONDS", "2.33"))
+    # 初回チャンクを1ランク下の解像度で生成(LTX の startup プロファイル相当)。
+    h3_startup_lowres: bool = os.getenv("H3_STARTUP_LOWRES", "1") == "1"
     h3_target_chunk_seconds: float = float(os.getenv("H3_TARGET_CHUNK_SECONDS", "5.8"))
 
 

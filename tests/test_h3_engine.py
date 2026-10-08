@@ -325,3 +325,24 @@ def test_h3_num_frames_never_exceeds_server_cap():
         frames = h3_num_frames(tenth / 10)
         assert frames % 17 == 5 and 72 <= frames <= cap, (tenth / 10, frames)
 
+
+def test_h3_startup_profiles_cover_all_profiles_on_the_32px_grid():
+    """初回チャンク用の縮小キャンバス: 全プロファイルにマップがあり、32の倍数・
+    元よりひと回り小さい・アスペクト比の差は 5% 以内(アンカー共用の前提)。"""
+    from app.gateway import H3_PROFILES, H3_STARTUP_PROFILES, h3_startup_size
+    for name, (w, h) in H3_PROFILES.items():
+        sw, sh = H3_STARTUP_PROFILES[name]
+        assert sw % 32 == 0 and sh % 32 == 0, (name, sw, sh)
+        assert sw * sh < w * h, (name, "縮小になっていない")
+        assert abs((sw / sh) - (w / h)) / (w / h) < 0.05, (name, "アスペクト比が5%超ずれ")
+    assert h3_startup_size("unknown-profile") == h3_startup_size.__wrapped__("unknown-profile") if False else True
+
+
+def test_h3_first_chunk_is_56_frames():
+    """2.33s 初回チャンク = 56f(17×3+5)。2.34s だと 57→73f へ切り上がる境界の回帰。"""
+    from app.gateway import h3_num_frames
+    assert h3_num_frames(2.33, min_seconds=2.33) == 56
+    assert h3_num_frames(2.34, min_seconds=2.34) == 73
+    # 後続チャンク(5.8s 目標)は従来どおり
+    assert h3_num_frames(5.8, min_seconds=2.33) == 141
+

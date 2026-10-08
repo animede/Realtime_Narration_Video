@@ -319,6 +319,31 @@ H3_PROFILES: dict[str, tuple[int, int]] = {
 }
 DEFAULT_H3_PROFILE = "h3-portrait-352x640"
 
+# 初回チャンク専用の「1ランク下」解像度(LTX の startup プロファイル相当、2026-10-08)。
+# 値は同アスペクト近傍・32の倍数。初動の denoise/decode を ~0.6s 削る(画素 -18%前後)。
+# 参照 prefix キャッシュのキーは出力解像度を含まない(movie-server runner の
+# _single_ref_prefix_cache_key 実測確認)ため、初回だけサイズを変えてもスラッシングしない。
+# 無効化は env H3_STARTUP_LOWRES=0。
+H3_STARTUP_PROFILES: dict[str, tuple[int, int]] = {
+    "h3-portrait-352x608": (320, 544),
+    "h3-portrait-352x640": (320, 576),
+    "h3-portrait-384x704": (352, 640),
+    "h3-portrait-320x448": (288, 416),   # 単機32GB probe で実測済みペア
+    "h3-landscape-608x352": (544, 320),
+    "h3-landscape-704x384": (640, 352),
+    "h3-landscape-448x320": (416, 288),
+    "h3-4x3-512x384": (416, 320),
+    "h3-3x4-384x512": (320, 416),
+    "h3-4x3-544x416": (512, 384),
+    "h3-3x4-416x544": (384, 512),
+}
+
+
+def h3_startup_size(profile: str) -> tuple[int, int]:
+    """初回チャンク用の縮小キャンバス。マップに無いプロファイルは通常サイズへフォールバック。"""
+    return H3_STARTUP_PROFILES.get(profile, h3_profile_size(profile))
+
+
 # 待機クリップ(fl2va first=last=アンカー)のプロンプト。probe で実績のある文言。
 # **変更しないこと**: 2026-10-07 に2回の A/B を実施し、(1) 否定形除去+末尾句強化は
 # 閉口アンカー上で 2/3 悪化、(2) 唇が開いたアンカー上で強化3候補(V3句末尾/
@@ -658,7 +683,10 @@ def make_gateway(engine: str, settings) -> GatewayClient:
     """Engine factory. ltx25 returns exactly the pre-existing client."""
     if normalize_engine(engine) == "h3":
         return H3GatewayClient(settings.gateway_url, settings.h3_gateway_preset,
-                               settings.poll_interval, gpus=settings.h3_gpus)
+                               settings.poll_interval, gpus=settings.h3_gpus,
+                               # クリップ下限 = 初回チャンク長(56f=2.33s 化に追従。
+                               # load_body が H3_MIN_SECONDS として backend へ渡す)。
+                               min_seconds=settings.h3_first_chunk_seconds)
     return GatewayClient(settings.gateway_url, settings.gateway_preset, settings.poll_interval)
 
 

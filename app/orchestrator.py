@@ -13,7 +13,7 @@ from .gateway import (
     GatewayError,
     VIDEO_PROFILES, GatewayClient, H3GatewayClient, H3_CLOSED_ANCHOR_FRAME_S, H3_IDLE_PROMPT,
     H3_IDLE_SECONDS, H3_STEPS, cover_crop, crop_to_aspect, generation_profile,
-    h3_clip_seconds, h3_profile_size, image_size, make_gateway, profile_duration,
+    h3_clip_seconds, h3_profile_size, h3_startup_size, image_size, make_gateway, profile_duration,
 )
 
 # H3 の待機プール(fl2va first=last)専用の閉口アンカー。発話側の参照
@@ -873,6 +873,12 @@ class Orchestrator:
             """
             assert isinstance(gateway, H3GatewayClient)
             width, height = h3_profile_size(session.video_profile)
+            # 初回チャンクは1ランク下の解像度で初動を削る(LTX の startup 相当)。
+            # アスペクト比はほぼ同一なので参照アンカーは共用する。
+            startup_w, startup_h = (
+                h3_startup_size(session.video_profile)
+                if self.settings.h3_startup_lowres else (width, height)
+            )
             await self._ensure_h3_ready(session, gateway)
             anchor = self._h3_anchor(session, character, folder)
             anchor_id = await gateway.upload(anchor)
@@ -964,12 +970,13 @@ class Orchestrator:
                     chunk.generated_steps = steps
                     chunk.generated_seed = seed
                     chunk.generated_frames = round(clip_seconds * 24)
+                    chunk_w, chunk_h = (startup_w, startup_h) if first_video_of_turn else (width, height)
                     body = gateway.chunk_body(
                         anchor_id=reference_id, audio_id=audio_id,
                         prompt=self._prompt_h3(
                             chunk.text, session.concept, session.action_level,
                             session.video_instruction, turn_video_instruction),
-                        width=width, height=height, seconds=clip_seconds, seed=seed, steps=steps)
+                        width=chunk_w, height=chunk_h, seconds=clip_seconds, seed=seed, steps=steps)
                     # Returns once the backend really started this job (投入規律, プラン §4-1).
                     job_id = await gateway.submit(body)
                     first_video_of_turn = False
