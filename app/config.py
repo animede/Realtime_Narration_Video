@@ -28,6 +28,10 @@ class Settings:
     # H3 の既定解像度プロファイル(app/gateway.py の H3_PROFILES のキー)。
     # 32GB級は縦352x608、96GB級は縦384x704 等を選ぶ(プラン §3b)。
     h3_profile: str = os.getenv("H3_PROFILE", "h3-portrait-352x640").strip()
+    # H3 待機クリップの生成方式の既定("fl2va" / "silent_ref2va")。ref2va-only 系
+    # プリセット(単騎 24/32GB)では silent_ref2va を注入する(launcher が設定)。
+    # セッションごとに h3_idle_mode で上書き可能。
+    h3_idle_mode: str = os.getenv("H3_IDLE_MODE", "fl2va").strip()
     # 先頭チャンク(3.04s=73f)と後続チャンク(5.875s=141f の格子に収まる 5.8s)の目標発話長。
     # 待機(FLF)の端点に「閉口アンカー(無音 ref2va の生成フレーム)」を使うか。
     # 既定 0 = 元画像の原寸切り出しを使う(ユーザー判定 2026-10-07: 生成フレームは

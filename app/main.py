@@ -113,7 +113,7 @@ async def create_session(
     idle_liveliness: str = Form("lively"),
     idle_pool_size: int = Form(5),
     h3_anchor_soften: str = Form("none"),
-    h3_idle_mode: str = Form("fl2va"),
+    h3_idle_mode: str = Form(settings.h3_idle_mode),
     turn_anchor_mode: str = Form("speaking"),
     turn_end_mode: str = Form("free"),
     camera_lock_enabled: bool = Form(False),
