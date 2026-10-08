@@ -403,7 +403,8 @@ idleStages.forEach(media => media.addEventListener("ended", advanceIdle));
 const liveSettingNames = [
   "concept", "video_instruction", "action_level", "lip_sync_mode", "conversation_language", "voice_id",
   "video_seed", "video_steps", "modality_scale_enabled", "idle_liveliness",
-  "camera_lock_enabled", "turn_anchor_mode", "turn_end_mode", "target_chunk_seconds", "startup_buffer_chunks"
+  "camera_lock_enabled", "turn_anchor_mode", "turn_end_mode", "target_chunk_seconds", "startup_buffer_chunks",
+  "idle_pool_size"
 ];
 const profileSizes = {
   "16fps-5x3": [640, 384], "16fps-3x2": [576, 384],

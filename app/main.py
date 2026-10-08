@@ -228,6 +228,9 @@ class SessionSettingsUpdate(BaseModel):
     modality_scale_enabled: bool | None = None
     target_chunk_seconds: float | None = None
     startup_buffer_chunks: int | None = None
+    # 2026-10-08: 追い生成頻度の運用調整(待機補充と会話の衝突低減)をセッション中に
+    # 変えられるようライブ設定化。プールの実体は次の補充/剪定から新しい本数に追従する。
+    idle_pool_size: int | None = None
 
 
 @app.patch("/api/sessions/{session_id}/settings", response_model=NarrationSession)
@@ -253,6 +256,8 @@ async def update_session_settings(session_id: str, request: SessionSettingsUpdat
         raise HTTPException(400, "会話言語が不正です")
     if "video_seed" in values and not 0 <= values["video_seed"] <= 2_147_483_647:
         raise HTTPException(400, "seedは0～2147483647で指定してください")
+    if "idle_pool_size" in values and not 3 <= values["idle_pool_size"] <= 7:
+        raise HTTPException(400, "待機動画の本数は3〜7で指定してください")
     if "video_steps" in values and not 1 <= values["video_steps"] <= 12:
         raise HTTPException(400, "stepsは1～12にしてください")
     if "target_chunk_seconds" in values and not 3.5 <= values["target_chunk_seconds"] <= 5.0:
