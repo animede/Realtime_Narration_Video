@@ -112,6 +112,7 @@ async def create_session(
     idle_motion_profile: str = Form("wide"),
     idle_liveliness: str = Form("lively"),
     idle_pool_size: int = Form(5),
+    h3_anchor_soften: str = Form("none"),
     turn_anchor_mode: str = Form("speaking"),
     turn_end_mode: str = Form("free"),
     camera_lock_enabled: bool = Form(False),
@@ -156,6 +157,8 @@ async def create_session(
         raise HTTPException(400, "アイドル動作設定が不正です")
     if idle_liveliness not in {"calm", "lively"}:
         raise HTTPException(400, "待機の動き設定が不正です")
+    if h3_anchor_soften not in {"none", "weak", "medium"}:
+        raise HTTPException(400, "発話参照のソフト化は none/weak/medium から選んでください")
     if not 3 <= idle_pool_size <= 7:
         raise HTTPException(400, "待機動画の本数は3～7にしてください")
     if turn_anchor_mode not in {"speaking", "idle_frame"}:
@@ -177,6 +180,7 @@ async def create_session(
         character_mode=character_mode, lip_sync_mode=lip_sync_mode,
         idle_motion_profile=idle_motion_profile, idle_liveliness=idle_liveliness,
         idle_pool_size=idle_pool_size, turn_anchor_mode=turn_anchor_mode,
+        h3_anchor_soften=h3_anchor_soften,
         turn_end_mode=turn_end_mode,
         camera_lock_enabled=camera_lock_enabled,
         video_seed=video_seed,
@@ -231,6 +235,7 @@ class SessionSettingsUpdate(BaseModel):
     # 2026-10-08: 追い生成頻度の運用調整(待機補充と会話の衝突低減)をセッション中に
     # 変えられるようライブ設定化。プールの実体は次の補充/剪定から新しい本数に追従する。
     idle_pool_size: int | None = None
+    h3_anchor_soften: str | None = None
 
 
 @app.patch("/api/sessions/{session_id}/settings", response_model=NarrationSession)
@@ -256,6 +261,8 @@ async def update_session_settings(session_id: str, request: SessionSettingsUpdat
         raise HTTPException(400, "会話言語が不正です")
     if "video_seed" in values and not 0 <= values["video_seed"] <= 2_147_483_647:
         raise HTTPException(400, "seedは0～2147483647で指定してください")
+    if "h3_anchor_soften" in values and values["h3_anchor_soften"] not in {"none", "weak", "medium"}:
+        raise HTTPException(400, "発話参照のソフト化は none/weak/medium から選んでください")
     if "idle_pool_size" in values and not 3 <= values["idle_pool_size"] <= 7:
         raise HTTPException(400, "待機動画の本数は3〜7で指定してください")
     if "video_steps" in values and not 1 <= values["video_steps"] <= 12:
@@ -392,7 +399,7 @@ async def get_session(session_id: str):
 PRESET_SETTINGS_KEYS = [
     "video_engine", "concept", "video_instruction", "action_level", "voice_id", "video_profile",
     "character_mode", "lip_sync_mode", "idle_motion_profile", "idle_liveliness",
-    "idle_pool_size", "turn_anchor_mode", "turn_end_mode", "camera_lock_enabled",
+    "idle_pool_size", "h3_anchor_soften", "turn_anchor_mode", "turn_end_mode", "camera_lock_enabled",
     "video_seed", "video_steps", "modality_scale_enabled",
     "ui_language", "conversation_language", "target_chunk_seconds",
     "startup_buffer_chunks",

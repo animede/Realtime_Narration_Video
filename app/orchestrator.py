@@ -365,6 +365,30 @@ class Orchestrator:
             self._write_h3_anchor(session, character, anchor)
         return anchor
 
+    # 発話参照ソフト化の強度(bilateral filter の d / sigmaColor / sigmaSpace)。
+    # 2026-10-08 A/B 実測: 弱で lapvar 91->78、中で ->61(エッジ保存なので同一性は維持)。
+    _H3_SOFTEN_PARAMS = {"weak": (9, 40, 40), "medium": (15, 70, 70)}
+
+    def _soften_h3_reference(self, session: NarrationSession, source: Path, folder: Path) -> Path:
+        """ref2va の発話参照にエッジ保存ソフト化を掛けた派生ファイルを返す。
+
+        ref2va は参照写真の質感(肌の光沢・照明)を忠実に再現するため、発話クリップの
+        テカリ感は参照側で抑えるのが唯一効くレバー(プロンプト・steps では動かない、
+        2026-10-08 A/B)。設定 none ならそのまま返す。派生はソースより新しければ再利用。
+        待機(fl2va)系のアンカーには適用しない(待機は元から自然なため)。
+        """
+        level = getattr(session, "h3_anchor_soften", "none")
+        params = self._H3_SOFTEN_PARAMS.get(level)
+        if params is None:
+            return source
+        target = folder / f"{source.stem}-soft-{level}.png"
+        if not (target.is_file() and target.stat().st_mtime >= source.stat().st_mtime):
+            import cv2
+
+            image = cv2.imread(str(source))
+            cv2.imwrite(str(target), cv2.bilateralFilter(image, *params))
+        return target
+
     async def _build_idle_loop_h3(self, session: NarrationSession, gateway: GatewayClient,
                                   folder: Path, character: Path, target: Path,
                                   base_seed: int) -> Path:
@@ -880,12 +904,14 @@ class Orchestrator:
                 if self.settings.h3_startup_lowres else (width, height)
             )
             await self._ensure_h3_ready(session, gateway)
-            anchor = self._h3_anchor(session, character, folder)
+            anchor = self._soften_h3_reference(
+                session, self._h3_anchor(session, character, folder), folder)
             anchor_id = await gateway.upload(anchor)
             turn_anchor_id: str | None = None
             if (turn_anchor is not None and session.turn_anchor_mode == "idle_frame"
                     and turn_anchor.is_file()):
                 turn_ref = crop_to_aspect(turn_anchor, folder / "turn-anchor-h3.png", width, height)
+                turn_ref = self._soften_h3_reference(session, turn_ref, folder)
                 turn_anchor_id = await gateway.upload(turn_ref)
             first_video_of_turn = True
             finishers: list[asyncio.Task] = []

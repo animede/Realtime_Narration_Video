@@ -64,6 +64,10 @@ class NarrationSession(BaseModel):
     lip_sync_mode: str = "natural"
     idle_motion_profile: str = "wide"
     idle_liveliness: str = "lively"
+    # H3 発話参照のソフト化(none/weak/medium)。ref2va は参照写真の質感(肌の光沢・
+    # 照明)を忠実に再現するため、テカリは参照側のエッジ保存ソフト化で抑える
+    # (2026-10-08 A/B: lapvar 91 -> 78(weak)-> 61(medium)。プロンプトでは動かない)。
+    h3_anchor_soften: str = "none"
     idle_pool_size: int = 5
     turn_anchor_mode: str = "speaking"
     turn_end_mode: str = "free"

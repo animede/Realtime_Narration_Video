@@ -138,6 +138,14 @@
           </select>
           <small class="setting-help" data-i18n="idleMotionHint">画像内に写っている範囲を選択してください。キャラクター設定時に反映します。</small>
         </label>
+        <label class="live-setting"><span data-i18n="anchorSoften">発話参照のソフト化（H3）</span>
+          <select name="h3_anchor_soften">
+            <option value="none" selected data-i18n="anchorSoftenNone">なし（参照写真そのまま）</option>
+            <option value="weak" data-i18n="anchorSoftenWeak">弱（テカリを少し抑える）</option>
+            <option value="medium" data-i18n="anchorSoftenMedium">中（待機の質感に寄せる）</option>
+          </select>
+          <small class="setting-help" data-i18n="anchorSoftenHint">発話動画は参照写真の肌の光沢を再現します。ソフト化で待機動画との質感差を縮めます（次のターンから反映）。</small>
+        </label>
         <label class="live-setting"><span data-i18n="idlePoolSize">待機動画の本数</span>
           <select name="idle_pool_size">
             <option value="3" data-i18n="idlePool3">3本（登録が速い）</option>
