@@ -83,10 +83,11 @@ https://github.com/user-attachments/assets/e15ecb4d-5237-447e-abc9-7a64e3fea5d9
 | 環境変数 | 既定 | 内容 |
 |---|---|---|
 | `VIDEO_ENGINE` | `ltx25` | 新規セッションの既定エンジン |
-| `H3_GATEWAY_PRESET` | `dual-realtime-ref2va` | gateway の H3 プリセット（32GB級は `-32gb`） |
+| `H3_GATEWAY_PRESET` | `dual-realtime-ref2va` | gateway の H3 プリセット（32GB級は `-32gb`、単騎24GB級は `ref2va-only-24gb`） |
 | `H3_GPUS` | `0,1` | H3 の実行GPU（denoise=GPU0 / decode=GPU1） |
-| `H3_PROFILE` | `h3-portrait-352x608` | 既定解像度（96GB級は `h3-portrait-384x704` 等） |
-| `H3_FIRST_CHUNK_SECONDS` / `H3_TARGET_CHUNK_SECONDS` | `3.0` / `5.8` | 先頭／後続チャンクの目標発話長 |
+| `H3_PROFILE` | `h3-portrait-352x640` | 既定解像度（32GB級の保守側は `h3-portrait-352x608`、96GB級は `h3-portrait-384x704` 等） |
+| `H3_FIRST_CHUNK_SECONDS` / `H3_TARGET_CHUNK_SECONDS` | `2.33` / `5.8` | 先頭／後続チャンクの目標発話長 |
+| `H3_IDLE_MODE` | `fl2va` | 待機動画の生成方式。`fl2va` は始終点固定の完全ループ、`silent_ref2va` は base transformer を使わない無音 ref2va（ref2va-only 系プリセット向け、プール切替はハードカット） |
 
 H3は24fps固定・H3専用解像度のみ。リップシンクは音声（vocal_lock）に直接追従し、原音はH3側でmux済みのためr-n-vでの差し替えは行いません。プリセット（キャラ保存）はエンジン別に保存・一覧されます。
 
@@ -95,10 +96,20 @@ H3は24fps固定・H3専用解像度のみ。リップシンクは音声（vocal
 | GPU構成 | 判定 |
 |---|---|
 | 48GB級（RTX PRO 5000 / 6000 Blackwell） | ◎ リアルタイム動作（全常駐構成 `nvfp4-fast`、常駐実測 約33GB） |
-| RTX 5090 32GB単騎 | ◎ リアルタイム動作（32GB向け全常駐構成 `nvfp4-32gb`、常駐実測 約28.8GB・4stepチャンク3.8秒=実時間の0.79倍）。**GPUは動画エンジン専有が前提（TTS・LLMはCPU実行または別ホストに置くこと。ヘッドルームは約2GB）**。upsampler非搭載のため upscale/t2i は不可 |
-| RTX 4090 24GB | ✕ FP4カーネル非対応（NF4なら動作するが低速） |
+| RTX 5090 32GB単騎 | ◎ リアルタイム動作（32GB向け全常駐構成 `nvfp4-32gb`＋TE層ストリーミング。常駐実測 約23.6GB・会話ピーク27.1GB・約4秒/チャンク（再生4.8秒未満）・CUDA Graph有効）。**GPUは動画エンジン専有が前提（TTS・LLMはCPU実行または別ホストに置くこと）**。upsampler非搭載のため upscale/t2i は不可 |
+| RTX 4090 24GB | ✕ LTX-2.5 は FP4カーネル非対応（NF4なら動作するが低速） |
+| 24GB級（MiniMax-H3 エンジン） | ○ 動作（ref2va-only 系プリセット `ref2va-only-24gb`）。base transformer を載せないため待機動画は FLF ループ（fl2va）が使えず、無音 ref2va（`H3_IDLE_MODE=silent_ref2va`）で生成する。待機クリップは完全にはループしないため、プール切替はハードカットになる |
 
-上記はFP4（nvfp4）利用時の実測に基づく目安です。32GB級の行は空きVRAMを31GB（5090ヘッドレス相当）に制限したVRAM制限テストによる実測で、`nvfp4-32gb` プリセット（未使用の latent/temporal upsampler を非ロード −1.2GB、Text Encoder の埋め込みテーブルをCPUへ退避+不要なlogits計算を除去 −2.4GB）により、全常駐のリアルタイム構成が32GB級に収まることを確認しています（512×384・20fps・97フレーム・4stepsで定常3.5〜4秒/チャンク、出力品質は48GB構成と同等。なお32GB構成ではCUDA Graphを無効にします — 会話のような多shape実運用ではcaptureごとのメモリ蓄積が31GB予算に収まらないため。この解像度帯でのgraphの速度利得は僅かで、無効でもリアルタイムを維持します）。実際の使用量と速度は、動画プロファイル、モデル配置、同時稼働プロセスおよびドライバー環境によって変動します。
+LTX-2.5 の行はFP4（nvfp4）利用時の実測に基づく目安です。32GB級の行は空きVRAMを31GB（5090ヘッドレス相当）に制限したVRAM制限テストによる実測で、次の4つの削減を組み合わせて全常駐のリアルタイム構成を32GB級に収めています。
+
+| 削減 | 効果 | 速度への影響 |
+|---|---|---|
+| 未使用の latent/temporal upsampler を非ロード | 常駐 −1.2GB | なし |
+| Text Encoder の埋め込みテーブルをCPUへ退避、不要なlogits計算を除去 | 常駐 −1.9GB、一時 −0.5GB | なし |
+| Text Encoder の窓付き層ストリーミング（`LTX25_TE_STREAM=1`） | 常駐 −5.0GB | エンコード +0.16秒 |
+| アロケータ断片化の回収（`PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True`） | 断片 −1.3〜1.6GB | なし |
+
+合計で常駐は約32.5GBから約23.6GBに下がり、CUDA Graph を有効にしたまま会話7チャンク連続の通しで全チャンク成功・ピーク27.1GB・約4秒/チャンクを実測しています（512×384・20fps・97フレーム・4steps、出力品質は48GB構成と同等）。層ストリーミングと断片化回収はエンジン側の設定で、有効化の方法は [Diffusers-LTX2.5 の README](https://github.com/animede/diffusers-ltx2_5) を、各手法の詳細は[低VRAM化の技術解説](https://github.com/animede/diffusers-ltx2_5/blob/main/docs/lowvram-techniques.md)を参照してください。実機の RTX 5090 でも、層ストリーミング導入前の構成で会話モードが動作したというコミュニティ報告を受けています。実際の使用量と速度は、動画プロファイル、モデル配置、同時稼働プロセスおよびドライバー環境によって変動します。
 
 ## 起動
 

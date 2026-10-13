@@ -328,7 +328,7 @@ LTXが必要とする長さまで条件用WAVだけを無音パディングし�
 - 長時間会話ではGPUキューの変動で動画間ギャップが発生し得る
 - 日本語の句読点／ひらがな節境界のヒューリスティックは形態素解析ほど確実ではない
 - 確実な実写リップシンクには、生成後の専用リップシンク工程が必要
-- CUDA Graphsは48GB級構成の候補。32GB構成では多shapeのcaptureごとにメモリが増えるため無効化。`torch.compile`は引き続き検討候補
+- CUDA Graphsは当初、32GB構成では多shapeのcaptureごとにメモリが増えるため無効化していた。その後エンジン側のText Encoder層ストリーミングで約5GBの余裕ができ、32GB構成でも有効化できた（下記）。`torch.compile`は引き続き検討候補
 - LLMの発話内容から感情・表情・ジェスチャーを抽出して動作へ反映する処理は今後の課題
 
 ## 13. 測定値の読み方
@@ -362,3 +362,5 @@ LTXが必要とする長さまで条件用WAVだけを無音パディングし�
 - SSE切断後5秒で放棄されたターンを自動キャンセルし、不要なGPU稼働を防止
 
 32GB級構成では`nvfp4-32gb`を使い、未使用upsamplerの非ロードとText Encoderの一部CPU退避により常駐実測約28.8GBに収めました。空きVRAM 31GBの制限下で、512×384・20fps・97フレーム・4 stepsは定常3.5〜4秒（実測3.8秒）です。ただしヘッドルームは約2GBのため、動画エンジンはGPUを専有し、TTSとLLMはCPUまたは別ホストで動かします。32GB構成では多shape時のメモリ蓄積を避けるためCUDA Graphを無効化します。
+
+その後、エンジン側でText Encoderの窓付き層ストリーミング（`LTX25_TE_STREAM=1`）とアロケータ断片化の回収（`PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True`）を追加し、常駐は約23.6GBまで下がりました。CUDA Graphを有効にしたまま、会話7チャンク連続の通しで全チャンク成功・ピーク27.1GB・約4秒/チャンクを実測しています。上の「無効化」は、この改良前の結論です。詳細は[低VRAM化の技術解説](https://github.com/animede/diffusers-ltx2_5/blob/main/docs/lowvram-techniques.md)にあります。

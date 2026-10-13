@@ -306,7 +306,7 @@ Preparation was verified for 16 fps landscape, 20 fps landscape, 24 fps landscap
 - GPU queue variance can still exhaust the buffer in long conversations.
 - Heuristic Japanese punctuation/hiragana clause segmentation is less robust than morphological analysis.
 - Guaranteed photorealistic lip sync requires a dedicated post-generation lip-sync stage.
-- CUDA Graphs remain a candidate for 48 GB-class configurations but are disabled in the 32 GB profile because per-shape captures accumulate memory; `torch.compile` remains a candidate.
+- CUDA Graphs were initially disabled in the 32 GB profile because per-shape captures accumulate memory. Engine-side Text Encoder layer streaming later freed about 5 GB, and the 32 GB profile now runs with them enabled (see below). `torch.compile` remains a candidate.
 - Semantic emotion, expression, and gesture generation from LLM text is future work.
 
 ## 13. Interpreting measurements
@@ -338,3 +338,5 @@ After the September 4 latency work, development shifted toward long-running use 
 - Added automatic cancellation of abandoned turns five seconds after the last SSE viewer disconnects.
 
 For 32 GB-class GPUs, the `nvfp4-32gb` preset omits unused upsamplers and moves part of the Text Encoder to CPU, reducing measured resident use to approximately 28.8 GB. With free VRAM capped at 31 GB, a 512×384, 20 fps, 97-frame, four-step chunk took 3.5–4 seconds in steady state (3.8 seconds measured). The video engine must have the GPU to itself because headroom is only about 2 GB; run TTS and the LLM on CPU or another host. CUDA Graph is disabled in this profile to avoid per-shape memory accumulation.
+
+The engine later added windowed layer streaming of the Text Encoder (`LTX25_TE_STREAM=1`) and allocator fragmentation reclaim (`PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True`), bringing residency down to about 23.6 GB. With CUDA Graph enabled, a seven-chunk conversation run completed every chunk at a 27.1 GB peak and about 4 s per chunk. The "disabled" conclusion above predates that change. Details are in the [low-VRAM techniques write-up](https://github.com/animede/diffusers-ltx2_5/blob/main/docs/lowvram-techniques.en.md).

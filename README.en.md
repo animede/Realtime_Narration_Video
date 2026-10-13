@@ -75,10 +75,20 @@ On a single GPU, generation can occasionally be slower than playback. When the b
 | GPU configuration | Assessment |
 |---|---|
 | 48 GB class (RTX PRO 5000 / 6000 Blackwell) | Real-time operation (all-resident `nvfp4-fast` configuration, ~33 GB resident, measured) |
-| RTX 5090 32 GB alone | Real-time operation (32 GB-oriented all-resident `nvfp4-32gb` configuration: ~28.8 GB resident, 4-step chunks in 3.8 s = 0.79x real time, measured). **The GPU must be dedicated to the video engine — run TTS and the LLM on the CPU or another host (headroom is only ~2 GB)**. Upsamplers are not loaded, so upscale/t2i are unavailable |
-| RTX 4090 24 GB | Unsupported by the FP4 kernel; NF4 can run but is slower |
+| RTX 5090 32 GB alone | Real-time operation (32 GB-oriented all-resident `nvfp4-32gb` configuration with Text Encoder layer streaming: ~23.6 GB resident, 27.1 GB peak in conversation, ~4 s per chunk against 4.8 s of playback, CUDA Graph enabled, measured). **The GPU must be dedicated to the video engine — run TTS and the LLM on the CPU or another host**. Upsamplers are not loaded, so upscale/t2i are unavailable |
+| RTX 4090 24 GB | LTX-2.5 is unsupported by the FP4 kernel; NF4 can run but is slower |
+| 24 GB class (MiniMax-H3 engine) | Works with the ref2va-only preset `ref2va-only-24gb`. The base transformer is not loaded, so idle clips cannot use the FLF loop (fl2va) and are generated with silent ref2va (`H3_IDLE_MODE=silent_ref2va`). These clips do not loop perfectly, so idle-pool switches are hard cuts |
 
-These figures are based on measurements of the FP4 (nvfp4) configuration. The 32 GB row comes from a VRAM-capped test with free VRAM limited to 31 GB (headless RTX 5090 equivalent): the `nvfp4-32gb` preset (skips the unused latent/temporal upsamplers, −1.2 GB, and moves the Text Encoder's embedding table to CPU while removing the unnecessary logits computation, −2.4 GB) fits the all-resident real-time configuration into the 32 GB class — steady-state 3.5-4 s per 512×384 / 20 fps / 97-frame / 4-step chunk, with output quality equivalent to the 48 GB configuration. Note that the 32 GB configuration keeps CUDA Graph disabled: multi-shape real workloads (conversation) accumulate per-capture memory that does not fit the 31 GB budget, and the graph's speed gain at these resolutions is marginal — realtime is sustained without it. Actual memory consumption and speed vary with the video profile, model placement, concurrent processes, and driver environment.
+The LTX-2.5 rows are based on measurements of the FP4 (nvfp4) configuration. The 32 GB row comes from a VRAM-capped test with free VRAM limited to 31 GB (headless RTX 5090 equivalent). Four reductions combine to fit the all-resident real-time configuration into the 32 GB class:
+
+| Reduction | Effect | Speed cost |
+|---|---|---|
+| Skip loading the unused latent/temporal upsamplers | −1.2 GB resident | None |
+| Move the Text Encoder's embedding table to CPU and drop the unused logits computation | −1.9 GB resident, −0.5 GB transient | None |
+| Windowed layer streaming of the Text Encoder (`LTX25_TE_STREAM=1`) | −5.0 GB resident | +0.16 s per encode |
+| Reclaim allocator fragmentation (`PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True`) | −1.3 to −1.6 GB of fragments | None |
+
+Together they bring residency from about 32.5 GB down to about 23.6 GB. With CUDA Graph enabled, a seven-chunk conversation run completed every chunk at a 27.1 GB peak and about 4 s per chunk (512×384, 20 fps, 97 frames, 4 steps, output quality equivalent to the 48 GB configuration). Layer streaming and fragmentation reclaim are engine-side settings: see the [Diffusers-LTX2.5 README](https://github.com/animede/diffusers-ltx2_5) for how to enable them and the [low-VRAM techniques write-up](https://github.com/animede/diffusers-ltx2_5/blob/main/docs/lowvram-techniques.en.md) for details. A community report also confirmed conversation mode on a physical RTX 5090 with the configuration that predates layer streaming. Actual memory consumption and speed vary with the video profile, model placement, concurrent processes, and driver environment.
 
 ## Running
 
