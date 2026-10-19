@@ -91,7 +91,7 @@ cp .env.example .env
 PATH="$PWD/.venv/bin:$PATH" ./run.sh
 ```
 
-Open `http://localhost:8782` in a browser.
+Open `http://localhost:8782` in a browser. The server listens on `0.0.0.0` by default, so other PCs can reach it at `http://<server-ip>:8782` (there is no authentication; use it only on a trusted network such as your LAN).
 
 Configure the LLM, Gateway, and TTS endpoints in `.env`. The included `.env.example` uses localhost and should be adapted to your environment. If `LLM_MODEL` is empty, the application queries `/v1/models`, prefers a model whose name contains `44b`, and otherwise uses the first model.
 

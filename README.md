@@ -111,7 +111,7 @@ cp .env.example .env
 PATH="$PWD/.venv/bin:$PATH" ./run.sh
 ```
 
-ブラウザーで `http://localhost:8782` を開きます。
+ブラウザーで `http://localhost:8782` を開きます。サーバーは既定で`0.0.0.0`で待ち受けるため、外部PCからは`http://<サーバーのIP>:8782`でアクセスできます（認証機能はないため、LAN内など信頼できるネットワークで使ってください）。
 
 LLM、Gateway、TTSの接続先は`.env`で設定します。`.env.example`のlocalhost設定を環境に合わせて変更してください。`LLM_MODEL`が空の場合は`/v1/models`から名前に`44b`を含むモデルを優先し、なければ先頭のモデルを自動選択します。
 
