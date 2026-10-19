@@ -900,6 +900,13 @@ class Orchestrator:
             await video_queue.put(None)
 
         async def generate_video() -> None:
+            # 同居(coresident)で LTX を載せておく。未ロードのまま generate の auto_load に
+            # 任せると gateway 既定の process 戦略で H3 が止まる。同居を断られた(VRAM 不足
+            # など)ときは従来どおり auto_load に任せる。
+            try:
+                await gateway.load_backend()
+            except GatewayError as exc:
+                logger.info("LTX 同居ロードを断られたため auto_load に任せます: %s", exc)
             first_video_of_turn = True
             chain_path = character
             uploaded_images: dict[Path, str] = {}

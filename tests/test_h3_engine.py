@@ -49,14 +49,34 @@ def test_h3_frame_grid_matches_the_server_rounding():
     assert h3_clip_seconds(14.9) == 345 / 24
 
 
-def test_load_request_is_process_only_with_turbo_and_min_seconds():
+def test_load_request_is_coresident_with_turbo_and_min_seconds():
     client = H3GatewayClient("http://gw", "dual-realtime-ref2va", gpus="0,1",
                              extra_overrides={"H3_PORT": "8661"})
-    assert client.load_body() == {
+    expected = {
         "backend": "h3", "preset": "dual-realtime-ref2va", "gpus": "0,1",
         "toggles": {"turbo": True},
         "overrides": {"H3_MIN_SECONDS": "3.0", "H3_PORT": "8661"},
     }
+    assert client.load_body() == {**expected, "strategy": "coresident"}
+    assert client.load_body(coresident=False) == expected  # gateway 既定 = process
+
+
+def test_load_falls_back_to_process_only_when_coresident_lacks_vram(monkeypatch):
+    bodies = []
+
+    def handler(request):
+        body = json.loads(request.content)
+        bodies.append(body)
+        if body.get("strategy") == "coresident":
+            return httpx.Response(409, json={"detail": "同居で h3 を載せるには空き VRAM が足りません"})
+        return httpx.Response(200, json={"result": "started"})
+
+    real = httpx.AsyncClient
+    monkeypatch.setattr("app.gateway.httpx.AsyncClient",
+                        lambda **kw: real(transport=httpx.MockTransport(handler), **kw))
+    client = H3GatewayClient("http://gw", "p")
+    assert asyncio.run(client.load_backend()) == {"result": "started"}
+    assert [b.get("strategy") for b in bodies] == ["coresident", None]
 
 
 def test_chunk_and_idle_requests():

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import math
 import os
 from time import monotonic
@@ -10,6 +11,9 @@ from urllib.parse import urljoin
 import cv2
 import httpx
 import numpy as np
+
+
+logger = logging.getLogger(__name__)
 
 
 class GatewayError(RuntimeError):
@@ -539,11 +543,17 @@ class H3GatewayClient(GatewayClient):
 
     # -- request builders (pure; unit-tested) ---------------------------------
 
-    def load_body(self) -> dict:
+    def load_body(self, coresident: bool = True) -> dict:
         overrides = {"H3_MIN_SECONDS": f"{self.min_seconds:.1f}"}
         overrides.update(self.extra_overrides)
-        return {"backend": "h3", "preset": self.preset, "gpus": self.gpus,
+        body = {"backend": "h3", "preset": self.preset, "gpus": self.gpus,
                 "toggles": {"turbo": True}, "overrides": overrides}
+        if coresident:
+            # LTX を退去させずに同居する(LTX 側の load_backend と対称)。省略すると
+            # gateway 既定の "process" で LTX が止まり、H3⇄LTX の往復ごとに LTX が
+            # 再ロードになっていた。
+            body["strategy"] = "coresident"
+        return body
 
     def chunk_body(self, *, anchor_id: str, audio_id: str, prompt: str, width: int,
                    height: int, seconds: float, seed: int, steps: int = H3_STEPS) -> dict:
@@ -609,12 +619,21 @@ class H3GatewayClient(GatewayClient):
         エンジン切替の瞬間に LTX がまだ生成中(直前セッションの待機補充など)だと
         gateway が 409「バックエンド ltx25 が生成中(busy)」を返す(2026-10-06 実機)。
         LTX の 1 クリップは数十秒で終わるので、409 の間は 2 秒間隔で再試行する。
+
+        既定は同居(coresident)。gateway が空き VRAM 不足(< 40GiB)で同居を断ったときだけ
+        従来の process 戦略(LTX を止めて載せる)へ切り替える。
         """
         deadline = monotonic() + 180.0
+        coresident = True
         while True:
             async with httpx.AsyncClient(timeout=660) as client:
                 response = await client.post(f"{self.base_url}/api/v1/backend/load",
-                                             json=self.load_body())
+                                             json=self.load_body(coresident))
+            if response.status_code == 409 and coresident and "空き VRAM" in response.text:
+                logger.info("H3 同居ロードが VRAM 不足で断られたため LTX を退去して載せます: %s",
+                            response.text[:300])
+                coresident = False
+                continue
             if response.status_code == 409 and monotonic() < deadline:
                 await asyncio.sleep(2.0)
                 continue
