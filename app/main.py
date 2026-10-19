@@ -12,7 +12,7 @@ from time import time
 from uuid import uuid4
 
 import httpx
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -665,9 +665,27 @@ async def chunk_video(session_id: str, index: int, download: bool = False):
     return FileResponse(path, media_type="video/mp4")
 
 
+_LOOPBACK_HOSTS = {"127.0.0.1", "::1", "localhost"}
+_FORWARDED_HEADERS = ("forwarded", "x-forwarded-for", "x-real-ip")
+
+
+def _is_local_client(request: Request) -> bool:
+    """接続元がこのマシン自身で、かつ中継されていない(転送ヘッダが無い)か。"""
+    host = request.client.host if request.client else ""
+    if host not in _LOOPBACK_HOSTS and not host.startswith("127."):
+        return False
+    return not any(h in request.headers for h in _FORWARDED_HEADERS)
+
+
 @app.get("/api/fetch-image")
-async def fetch_image(url: str):
-    """D&D画像URLの取り込み(他タブのローカルURL・file:// のみ。CORS回避プロキシ)。"""
+async def fetch_image(url: str, request: Request):
+    """D&D画像URLの取り込み(他タブのローカルURL・file:// のみ。CORS回避プロキシ)。
+
+    サーバ上のファイルとローカルサービスを読めるため、HOST=0.0.0.0 で待ち受けても
+    このエンドポイントだけはサーバ自身のブラウザからの直接アクセスに限る。
+    """
+    if not _is_local_client(request):
+        raise HTTPException(403, "このURL取り込みはサーバ本体のブラウザからのみ使えます")
     import mimetypes
     from urllib.parse import unquote, urlparse
 
